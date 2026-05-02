@@ -377,17 +377,21 @@ async function fetchRead(id) {
     const out  = document.getElementById('out-'  + id);
     const rbtn = document.getElementById('rbtn-' + id);
     rbtn.classList.add('spinning');
-    out.className = 'read-out';
-    out.innerHTML = '<span style="color:var(--muted)">…</span>';
+    if (!out.dataset.loaded) {
+        out.className = 'read-out';
+        out.innerHTML = '<span style="color:var(--muted)">…</span>';
+    }
     try {
         const r = await fetch('/read/' + id);
         const d = await r.json();
-        if (d.ok) {
-            out.textContent = d.output ?? '—';
-        } else {
-            out.textContent = d.output || d.error || 'error';
-            out.classList.add('error');
+        const newText  = d.ok ? (d.output ?? '—') : (d.output || d.error || 'error');
+        const newError = !d.ok;
+        if (newText !== out.textContent || newError !== out.classList.contains('error')) {
+            out.className = 'read-out';
+            if (newError) out.classList.add('error');
+            out.textContent = newText;
         }
+        out.dataset.loaded = '1';
         const det = document.getElementById('det-' + id);
         if (det && det.closest('.row-right')) {
             if (d.details_url) {
@@ -398,8 +402,8 @@ async function fetchRead(id) {
             }
         }
     } catch {
+        out.className = 'read-out error';
         out.textContent = 'network error';
-        out.classList.add('error');
     } finally {
         rbtn.classList.remove('spinning');
     }
