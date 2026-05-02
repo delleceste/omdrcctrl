@@ -30,13 +30,17 @@ def load_config(path: str) -> None:
     for sid in cfg.sections():
         c = dict(cfg[sid])
         c["id"] = sid
-        for key in ("what", "group", "type", "cmd"):
+        for key in ("what", "group", "type"):
             if key not in c:
                 raise ValueError(f"[{sid}] missing required key: '{key}'")
-        if c["type"] not in ("READ", "WRITE"):
-            raise ValueError(f"[{sid}] type must be READ or WRITE, got: '{c['type']}'")
+        if c["type"] not in ("READ", "WRITE", "LINK"):
+            raise ValueError(f"[{sid}] type must be READ, WRITE or LINK, got: '{c['type']}'")
+        if c["type"] in ("READ", "WRITE") and "cmd" not in c:
+            raise ValueError(f"[{sid}] missing required key: 'cmd'")
         if c["type"] == "WRITE" and "button" not in c:
             raise ValueError(f"[{sid}] WRITE command missing 'button' key")
+        if c["type"] == "LINK" and "url" not in c:
+            raise ValueError(f"[{sid}] LINK command missing 'url' key")
         COMMANDS.append(c)
     CMD_MAP = {c["id"]: c for c in COMMANDS}
 
@@ -56,6 +60,15 @@ def _env() -> dict:
     e = dict(os.environ)
     e.setdefault("DISPLAY", ":0")
     return e
+
+
+def _find_dyn_details(cmd: dict, config_name: str) -> str | None:
+    root = cmd.get("details_root", "/home/giacomo/DRC")
+    for fname in ("README.md", "INDEX.md"):
+        path = os.path.join(root, config_name, fname)
+        if os.path.isfile(path):
+            return path
+    return None
 
 
 def _unit_active(unit: str) -> bool:
@@ -119,6 +132,51 @@ def details_asset(cmd_id, filename):
     return send_from_directory(base_dir, filename)
 
 
+@app.route("/details-dyn/<cmd_id>/<config_name>")
+def details_dyn_page(cmd_id, config_name):
+    if cmd_id not in CMD_MAP:
+        return "Unknown command", 404
+    cmd = CMD_MAP[cmd_id]
+    path = _find_dyn_details(cmd, config_name)
+    if not path:
+        return f"No README.md or INDEX.md found for: {config_name}", 404
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        return f"Cannot read file: {e}", 500
+    html = md_lib.markdown(text, extensions=["tables", "fenced_code", "extra"])
+    html = re.sub(
+        r'(src|href)="(?!https?://|/)([^"]+)"',
+        lambda m: f'{m.group(1)}="/details-dyn-asset/{cmd_id}/{config_name}/{m.group(2)}"',
+        html,
+    )
+    return render_template("details.html", title=config_name, content=html)
+
+
+@app.route("/details-dyn-asset/<cmd_id>/<config_name>/<path:filename>")
+def details_dyn_asset(cmd_id, config_name, filename):
+    if cmd_id not in CMD_MAP:
+        return "Not found", 404
+    cmd = CMD_MAP[cmd_id]
+    path = _find_dyn_details(cmd, config_name)
+    if not path:
+        return "Not found", 404
+    return send_from_directory(os.path.dirname(path), filename)
+
+
+@app.route("/readme")
+def readme_page():
+    path = os.path.join(_HERE, "README.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except FileNotFoundError:
+        return "README not found", 404
+    html = md_lib.markdown(text, extensions=["tables", "fenced_code", "extra"])
+    return render_template("details.html", title="arkictrl — README", content=html)
+
+
 # ── API routes ────────────────────────────────────────────────────────────────
 
 @app.route("/run/<cmd_id>", methods=["POST"])
@@ -160,7 +218,10 @@ def read_command(cmd_id):
         )
         ok     = result.returncode == 0
         output = (result.stdout + result.stderr).strip()
-        return jsonify({"ok": ok, "output": output or (None if ok else f"exit {result.returncode}")})
+        resp   = {"ok": ok, "output": output or (None if ok else f"exit {result.returncode}")}
+        if ok and output and "details_root" in cmd and _find_dyn_details(cmd, output):
+            resp["details_url"] = f"/details-dyn/{cmd_id}/{output}"
+        return jsonify(resp)
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "output": "timeout"})
 

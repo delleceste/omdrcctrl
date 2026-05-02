@@ -113,6 +113,24 @@
         .btn-write.ok    { border-color: var(--green); color: var(--green); background: rgba(63,185,80,.08); }
         .btn-write.error { border-color: var(--red);   color: var(--red);   background: rgba(248,81,73,.08); }
 
+        /* ── LINK button ─────────────────────────────────────── */
+        .btn-link {
+            min-width: 72px;
+            padding: 7px 16px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg);
+            color: var(--muted);
+            font-size: .85rem;
+            font-weight: 500;
+            text-decoration: none;
+            white-space: nowrap;
+            text-align: center;
+            transition: border-color .2s, color .2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn-link:hover { border-color: var(--accent); color: var(--accent); }
+
         /* ── READ output ─────────────────────────────────────── */
         .read-wrap {
             display: flex;
@@ -186,6 +204,20 @@
         #toast.ok    { border-color: var(--green); color: var(--green); }
         #toast.error { border-color: var(--red);   color: var(--red);   }
 
+        /* ── footer ──────────────────────────────────────────── */
+        footer {
+            text-align: center;
+            padding: 18px 0 10px;
+        }
+        footer a {
+            font-size: .72rem;
+            color: var(--muted);
+            text-decoration: none;
+            opacity: .55;
+            transition: opacity .15s;
+        }
+        footer a:hover { opacity: 1; }
+
         /* ── confirm dialog ──────────────────────────────────── */
         #overlay {
             display: none;
@@ -241,6 +273,12 @@
                 {{ cmd.button }}
             </button>
 
+            {% elif cmd.type == 'LINK' %}
+            <a class="btn-link"
+               href="{{ cmd.url }}"
+               target="_blank"
+               rel="noopener noreferrer">Open ↗</a>
+
             {% else %}{# READ #}
             <span class="read-wrap">
                 <span class="read-out"
@@ -259,6 +297,8 @@
             <a class="btn-details"
                id="det-{{ cmd.id }}"
                href="/details/{{ cmd.id }}">Details</a>
+            {% elif cmd.type == 'READ' and 'details_root' in cmd %}
+            <a class="btn-details" id="det-{{ cmd.id }}" href="#">Details</a>
             {% endif %}
 
         </div>{# .row-right #}
@@ -279,6 +319,8 @@
         </div>
     </div>
 </div>
+
+<footer><a href="/readme">README</a></footer>
 
 <div id="toast"></div>
 
@@ -345,6 +387,15 @@ async function fetchRead(id) {
         } else {
             out.textContent = d.output || d.error || 'error';
             out.classList.add('error');
+        }
+        const det = document.getElementById('det-' + id);
+        if (det && det.closest('.row-right')) {
+            if (d.details_url) {
+                det.href = d.details_url;
+                det.classList.add('active');
+            } else {
+                det.classList.remove('active');
+            }
         }
     } catch {
         out.textContent = 'network error';

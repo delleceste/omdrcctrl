@@ -18,6 +18,13 @@ provides no feedback. Every command here either shows its output directly
 - **WRITE widgets** — a labelled button that fires a command; button turns
   green on success, red on failure, with an optional confirmation dialog for
   destructive actions.
+- **Dynamic details** — a READ widget can expose a **Details** button that
+  appears automatically when a Markdown file is found under
+  `{details_root}/{output}/README.md` (or `INDEX.md`). The file and any
+  relative images are served on demand, so each configuration value can have
+  its own documentation page without any static wiring.
+- **Static details** — a WRITE widget can link to a fixed Markdown file;
+  the Details button appears when a nominated systemctl unit is active.
 - **Dark, touch-friendly UI** — works well on a phone home screen without
   installing any app.
 - **No hard-coded commands** — everything lives in `commands.conf`; restart
@@ -44,6 +51,7 @@ provides no feedback. Every command here either shows its output directly
 ```
 arkictrl/
 ├── CMakeLists.txt
+├── README.md
 ├── requirements.txt
 ├── src/
 │   ├── app.py               # Flask application
@@ -61,49 +69,86 @@ arkictrl/
 ## Build and install
 
 ```bash
-# 1. install the Python dependency
-pip install flask
+# 1. install Python dependencies
+pip install flask markdown
 
-# 2. configure (default prefix: /usr/local)
+# 2. configure
 mkdir build && cd build
+
+# system-wide install (default prefix /usr/local, requires sudo)
 cmake ..
 
-# to install somewhere else:
-cmake .. -DCMAKE_INSTALL_PREFIX=/opt/arkictrl
+# — or — user install (no root required, prefix defaults to ~/.local)
+cmake .. -DUSER_INSTALL=ON
 
-# 3. install (writes files under the chosen prefix)
-sudo cmake --install .
+# override the prefix explicitly if needed
+cmake .. -DUSER_INSTALL=ON -DCMAKE_INSTALL_PREFIX=~/.local
+
+# 3. install
+sudo cmake --install .        # system install
+cmake --install .             # user install (no sudo)
 ```
 
-Installed paths (with the default `/usr/local` prefix):
+### System install paths (prefix `/usr/local`)
 
 | Path | Contents |
 |---|---|
 | `/usr/local/bin/arkictrl` | launcher shell script |
 | `/usr/local/lib/arkictrl/app.py` | Flask application |
-| `/usr/local/lib/arkictrl/templates/` | HTML template |
+| `/usr/local/lib/arkictrl/README.md` | this file (served at `/readme`) |
+| `/usr/local/lib/arkictrl/templates/` | HTML templates |
 | `/usr/local/etc/arkictrl/commands.conf` | command definitions |
-| `/usr/local/lib/systemd/system/arkictrl.service` | systemd unit |
+| `/usr/local/lib/systemd/system/arkictrl.service` | systemd system unit |
+
+### User install paths (prefix `~/.local`)
+
+| Path | Contents |
+|---|---|
+| `~/.local/bin/arkictrl` | launcher shell script |
+| `~/.local/lib/arkictrl/app.py` | Flask application |
+| `~/.local/lib/arkictrl/README.md` | this file (served at `/readme`) |
+| `~/.local/lib/arkictrl/templates/` | HTML templates |
+| `~/.local/etc/arkictrl/commands.conf` | command definitions |
+| `~/.local/lib/systemd/user/arkictrl.service` | systemd user unit |
 
 ---
 
 ## Running as a systemd service
 
+### System service
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now arkictrl
-
-# check that it started
 sudo systemctl status arkictrl
 ```
 
 The service runs as user `giacomo` (edit `systemd/arkictrl.service.in` before
 installing to change this).
 
-To restart after editing `commands.conf`:
+### User service (`-DUSER_INSTALL=ON`)
+
+No root required. The service runs as your own user automatically.
 
 ```bash
-sudo systemctl restart arkictrl
+systemctl --user daemon-reload
+systemctl --user enable --now arkictrl
+systemctl --user status arkictrl
+```
+
+If systemd does not find the unit, link it into the user search path:
+
+```bash
+ln -s ~/.local/lib/systemd/user/arkictrl.service \
+      ~/.config/systemd/user/arkictrl.service
+systemctl --user daemon-reload
+```
+
+### Restarting after config changes
+
+```bash
+sudo systemctl restart arkictrl          # system
+systemctl --user restart arkictrl        # user
 ```
 
 ---
@@ -127,46 +172,7 @@ All commands are defined in `commands.conf` (INI format, parsed by Python's
 `configparser`). Lines starting with `#` are comments.
 
 Each `[section]` is one command. The section name is the internal id and must
-be unique, contain no spaces.
-
-### Details page
-
-Any command (READ or WRITE) can expose a **Details** button that opens a
-full-screen page rendering a Markdown file.  Two config keys control this:
-
-| Key | Description |
-|---|---|
-| `unit` | systemctl unit name, checked with `systemctl is-active --quiet <unit>` |
-| `details` | absolute path to a `.md` file |
-
-Both keys must be present together.  The Details button is hidden while the
-unit is inactive and appears automatically (within 5 s) when it becomes active.
-`/status` is polled every 5 seconds for all commands that carry both keys.
-
-The Markdown file may contain text, headings, tables, code blocks, and images.
-Images should use **relative paths**; they are served from the same directory
-as the `.md` file via `/details-asset/<id>/<path>`.  Example structure:
-
-```
-/home/giacomo/DRC/brutefir-conf/docs/
-├── 120.blue+0dB.md
-├── 120.blue+2dB.md
-└── img/
-    ├── freq_response_flat.png
-    └── freq_response_2dB.png
-```
-
-Inside `120.blue+0dB.md`:
-```markdown
-# DRC Flat profile
-
-Measured with miniDSP UMIK-1 at 1 m, 0 dB target.
-
-![Frequency response](img/freq_response_flat.png)
-*After correction — ±1.5 dB 80 Hz – 16 kHz*
-```
-
----
+be unique and contain no spaces.
 
 ### Keys common to all commands
 
@@ -189,15 +195,71 @@ Measured with miniDSP UMIK-1 at 1 m, 0 dB target.
 | Key | Required | Description |
 |---|---|---|
 | `refresh` | no | Auto-refresh interval in seconds; `0` or omitted = manual only |
+| `details_root` | no | Root directory for dynamic details lookup (see below) |
 
-### Optional keys (READ or WRITE)
+### Static details (WRITE commands)
+
+Any WRITE command can expose a **Details** button linked to a fixed Markdown
+file. Two keys work together:
 
 | Key | Description |
 |---|---|
-| `unit` | systemctl unit name — Details button appears when `systemctl is-active <unit>` exits 0 |
+| `unit` | systemctl unit name — the Details button appears when `systemctl is-active <unit>` exits 0 |
 | `details` | absolute path to a `.md` file rendered on the details page |
 
-Both must be present together; specifying only one has no effect.
+Both keys must be present. The Details button is hidden while the unit is
+inactive and appears automatically (within 5 s). `/status` is polled every
+5 seconds for all commands that carry both keys.
+
+### Dynamic details (READ commands)
+
+A READ command with `details_root` gets a **Details** button that appears
+whenever the command's current output matches a directory containing
+`README.md` or `INDEX.md` inside the root:
+
+```
+{details_root}/{output}/README.md   ← checked first
+{details_root}/{output}/INDEX.md    ← fallback
+```
+
+Every time `/read/<id>` is called, the server checks whether the file exists
+and includes `details_url` in the JSON response if it does. The frontend shows
+or hides the button accordingly.
+
+Example — DRC active-config status widget:
+
+```ini
+[drc_status]
+what         = Active config
+group        = drc
+type         = READ
+refresh      = 5
+cmd          = ps -C brutefir -o args= 2>/dev/null \
+               | sed -n 's|.*brutefir-\([^ ]*\)\.conf.*|\1|p' \
+               | grep . || echo off
+details_root = /home/giacomo/DRC
+```
+
+When brutefir is running with `brutefir-120.blue+0dB.conf` the command
+outputs `120.blue+0dB`. The server then looks for
+`/home/giacomo/DRC/120.blue+0dB/README.md`. If found, the Details button
+appears and opens that file rendered as HTML.
+
+Markdown files may use **relative paths** for images and links; they are served
+from the same directory as the `.md` file via
+`/details-dyn-asset/<id>/<config>/<path>`. Example layout:
+
+```
+/home/giacomo/DRC/
+├── 120.blue+0dB/
+│   ├── README.md
+│   └── img/
+│       └── freq_response.png
+└── 120.blue+2dB/
+    ├── README.md
+    └── img/
+        └── freq_response.png
+```
 
 ### Widget behaviour
 
@@ -230,15 +292,6 @@ refresh = 10
 cmd     = sensors | awk '/Core 0/{print $3}'
 ```
 
-```ini
-[brutefir_status]
-what    = Brutefir running
-group   = drc
-type    = READ
-refresh = 5
-cmd     = pgrep -x brutefir > /dev/null && echo yes || echo no
-```
-
 ### Example: a custom app launcher
 
 ```ini
@@ -266,11 +319,11 @@ cmd     = systemctl --user stop jack
 
 ## HTTP API
 
-The server exposes three endpoints; all responses are JSON.
+All responses are JSON unless noted.
 
 ### `GET /`
 
-Returns the rendered HTML page.
+Returns the rendered HTML control panel.
 
 ---
 
@@ -278,13 +331,8 @@ Returns the rendered HTML page.
 
 Execute a WRITE command.
 
-**Response**
-
 ```json
 { "ok": true }
-```
-
-```json
 { "ok": false, "error": "stderr output or description" }
 ```
 
@@ -292,15 +340,13 @@ Execute a WRITE command.
 
 ### `GET /read/<id>`
 
-Execute a READ command and return its output.
-
-**Response**
-
-```json
-{ "ok": true,  "output": "56.2°C" }
-```
+Execute a READ command and return its output. When the command has
+`details_root` set and a matching Markdown file is found, `details_url` is
+included.
 
 ```json
+{ "ok": true,  "output": "120.blue+0dB", "details_url": "/details-dyn/drc_status/120.blue+0dB" }
+{ "ok": true,  "output": "off" }
 { "ok": false, "output": "command not found: sensors" }
 ```
 
@@ -308,39 +354,45 @@ Execute a READ command and return its output.
 
 ### `GET /status`
 
-Server health check and unit-active query.  For every command that has both
+Server health check and unit-active query. For every command that has both
 `unit` and `details` configured the server runs `systemctl is-active --quiet
-<unit>` and includes the result.  The browser polls this endpoint every 5
-seconds and shows or hides each Details button accordingly.
-
-**Response**
+<unit>` and includes the result. The browser polls this every 5 seconds.
 
 ```json
-{
-  "ok": true,
-  "units": {
-    "drc_flat": "active",
-    "drc_2db":  "inactive",
-    "drc_sox":  "inactive",
-    "drc_off":  "inactive"
-  }
-}
+{ "ok": true, "units": { "drc_flat": "active", "drc_2db": "inactive" } }
 ```
 
 ---
 
 ### `GET /details/<id>`
 
-Renders the `details` Markdown file for command `<id>` as a full HTML page.
+Renders the static `details` Markdown file for command `<id>` as HTML.
 Returns `404` if the command has no `details` key or the file is missing.
 
 ---
 
 ### `GET /details-asset/<id>/<path>`
 
-Serves files (images, etc.) from the same directory as the `details` Markdown
-file, allowing relative image references inside the `.md` to resolve correctly.
-`<path>` may include subdirectory components (e.g. `img/freq_response.png`).
+Serves files relative to the static `details` Markdown file directory.
+
+---
+
+### `GET /details-dyn/<id>/<config>`
+
+Renders `{details_root}/{config}/README.md` (or `INDEX.md`) as HTML for
+a READ command with `details_root`. Returns `404` if no file is found.
+
+---
+
+### `GET /details-dyn-asset/<id>/<config>/<path>`
+
+Serves files relative to the dynamic Markdown file directory (images, etc.).
+
+---
+
+### `GET /readme`
+
+Renders this README as an HTML page.
 
 ---
 
