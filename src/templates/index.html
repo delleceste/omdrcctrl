@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Arki Control</title>
+    <style>
+        :root {
+            --bg:      #0d1117;
+            --surface: #161b22;
+            --border:  #30363d;
+            --text:    #e6edf3;
+            --muted:   #8b949e;
+            --accent:  #388bfd;
+            --green:   #3fb950;
+            --yellow:  #d29922;
+            --red:     #f85149;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 16px;
+            max-width: 520px;
+            margin: 0 auto;
+        }
+
+        /* ── header ─────────────────────────────────────────── */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-top: 8px;
+        }
+        h1 { font-size: 1.35rem; font-weight: 600; letter-spacing: -.02em; }
+
+        #srv-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            transition: background .4s, box-shadow .4s;
+        }
+        #srv-dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+        /* ── card ────────────────────────────────────────────── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0 16px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+        .card-title {
+            font-size: .7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .12em;
+            color: var(--muted);
+            padding: 14px 0 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        /* ── row ─────────────────────────────────────────────── */
+        .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 11px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .row:last-child { border-bottom: none; }
+
+        .row-label {
+            flex: 1;
+            font-size: .9rem;
+            color: var(--text);
+            min-width: 0;
+        }
+
+        /* right-side container — holds action widget + optional Details button */
+        .row-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* ── WRITE button ────────────────────────────────────── */
+        .btn-write {
+            min-width: 72px;
+            padding: 7px 16px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg);
+            color: var(--accent);
+            font-size: .85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: border-color .2s, color .2s, background .2s;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .btn-write:disabled { opacity: .55; cursor: default; }
+        .btn-write.ok    { border-color: var(--green); color: var(--green); background: rgba(63,185,80,.08); }
+        .btn-write.error { border-color: var(--red);   color: var(--red);   background: rgba(248,81,73,.08); }
+
+        /* ── READ output ─────────────────────────────────────── */
+        .read-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .read-out {
+            font-family: ui-monospace, "SFMono-Regular", monospace;
+            font-size: .82rem;
+            color: var(--muted);
+            text-align: right;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-width: 160px;
+            max-height: 72px;
+            overflow-y: auto;
+        }
+        .read-out.error { color: var(--red); }
+
+        .btn-refresh {
+            background: none;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+            padding: 3px 4px;
+            border-radius: 4px;
+            transition: color .15s;
+            touch-action: manipulation;
+            flex-shrink: 0;
+        }
+        .btn-refresh:hover { color: var(--text); }
+        .btn-refresh.spinning { animation: spin .7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Details button ──────────────────────────────────── */
+        .btn-details {
+            display: none;   /* shown by JS when the unit is active */
+            padding: 7px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg);
+            color: var(--muted);
+            font-size: .82rem;
+            font-weight: 500;
+            text-decoration: none;
+            white-space: nowrap;
+            transition: border-color .2s, color .2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn-details:hover { border-color: var(--accent); color: var(--accent); }
+        .btn-details.active { display: inline-block; }
+
+        /* ── toast ───────────────────────────────────────────── */
+        #toast {
+            position: fixed;
+            bottom: 20px; left: 50%;
+            transform: translateX(-50%) translateY(70px);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 9px 20px;
+            font-size: .85rem;
+            pointer-events: none;
+            transition: transform .25s ease;
+            z-index: 50;
+            white-space: nowrap;
+        }
+        #toast.show  { transform: translateX(-50%) translateY(0); }
+        #toast.ok    { border-color: var(--green); color: var(--green); }
+        #toast.error { border-color: var(--red);   color: var(--red);   }
+
+        /* ── confirm dialog ──────────────────────────────────── */
+        #overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,.75);
+            align-items: center; justify-content: center;
+            z-index: 100;
+        }
+        #overlay.show { display: flex; }
+        .dialog {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px 20px 20px;
+            width: min(300px, 90vw);
+            text-align: center;
+        }
+        .dialog h3 { color: var(--red); margin-bottom: 6px; }
+        .dialog p  { color: var(--muted); font-size: .88rem; margin-bottom: 20px; line-height: 1.4; }
+        .dialog-btns { display: flex; gap: 10px; }
+        .dialog-btns button {
+            flex: 1; padding: 11px;
+            border-radius: 8px; border: 1px solid var(--border);
+            font-size: .9rem; font-weight: 500; cursor: pointer;
+        }
+        #dlg-cancel { background: var(--bg);  color: var(--text); }
+        #dlg-ok     { background: var(--red); color: #fff; border-color: var(--red); }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Arki Control</h1>
+    <div id="srv-dot"></div>
+</header>
+
+{% for group_name, group_label, cmds in groups %}
+<div class="card">
+    <div class="card-title">{{ group_label }}</div>
+
+    {% for cmd in cmds %}
+    <div class="row">
+        <span class="row-label">{{ cmd.what }}</span>
+
+        <div class="row-right">
+
+            {% if cmd.type == 'WRITE' %}
+            <button class="btn-write"
+                    id="btn-{{ cmd.id }}"
+                    data-confirm="{{ cmd.confirm | default('no') }}"
+                    data-what="{{ cmd.what }}"
+                    onclick="handleWrite('{{ cmd.id }}')">
+                {{ cmd.button }}
+            </button>
+
+            {% else %}{# READ #}
+            <span class="read-wrap">
+                <span class="read-out"
+                      id="out-{{ cmd.id }}"
+                      data-refresh="{{ cmd.refresh | default('0') }}">
+                    <span style="color:var(--muted)">…</span>
+                </span>
+                <button class="btn-refresh"
+                        id="rbtn-{{ cmd.id }}"
+                        onclick="fetchRead('{{ cmd.id }}')"
+                        title="Refresh">↻</button>
+            </span>
+            {% endif %}
+
+            {% if 'unit' in cmd and 'details' in cmd %}
+            <a class="btn-details"
+               id="det-{{ cmd.id }}"
+               href="/details/{{ cmd.id }}">Details</a>
+            {% endif %}
+
+        </div>{# .row-right #}
+    </div>
+    {% endfor %}
+
+</div>
+{% endfor %}
+
+<!-- Confirm dialog -->
+<div id="overlay">
+    <div class="dialog">
+        <h3 id="dlg-title"></h3>
+        <p  id="dlg-msg"></p>
+        <div class="dialog-btns">
+            <button id="dlg-cancel" onclick="hideConfirm()">Cancel</button>
+            <button id="dlg-ok">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── toast ──────────────────────────────────────────────────────────────────
+let _tt = null;
+function toast(msg, type = 'ok', ms = 2800) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + type;
+    clearTimeout(_tt);
+    _tt = setTimeout(() => { el.className = 'toast'; }, ms);
+}
+
+// ── WRITE ──────────────────────────────────────────────────────────────────
+function handleWrite(id) {
+    const btn = document.getElementById('btn-' + id);
+    if (btn.dataset.confirm === 'yes') {
+        askConfirm(id, btn.dataset.what);
+    } else {
+        runWrite(id);
+    }
+}
+
+async function runWrite(id) {
+    const btn      = document.getElementById('btn-' + id);
+    const origText = btn.textContent.trim();
+    btn.disabled   = true;
+    btn.textContent = '…';
+
+    let ok = false, errMsg = '';
+    try {
+        const r = await fetch('/run/' + id, { method: 'POST' });
+        const d = await r.json();
+        ok     = d.ok;
+        errMsg = d.error || '';
+    } catch {
+        errMsg = 'Network error';
+    }
+
+    btn.classList.toggle('ok',    ok);
+    btn.classList.toggle('error', !ok);
+    if (!ok && errMsg) toast(errMsg, 'error');
+
+    setTimeout(() => {
+        btn.classList.remove('ok', 'error');
+        btn.textContent = origText;
+        btn.disabled    = false;
+    }, ok ? 1600 : 2600);
+}
+
+// ── READ ───────────────────────────────────────────────────────────────────
+async function fetchRead(id) {
+    const out  = document.getElementById('out-'  + id);
+    const rbtn = document.getElementById('rbtn-' + id);
+    rbtn.classList.add('spinning');
+    out.className = 'read-out';
+    out.innerHTML = '<span style="color:var(--muted)">…</span>';
+    try {
+        const r = await fetch('/read/' + id);
+        const d = await r.json();
+        if (d.ok) {
+            out.textContent = d.output ?? '—';
+        } else {
+            out.textContent = d.output || d.error || 'error';
+            out.classList.add('error');
+        }
+    } catch {
+        out.textContent = 'network error';
+        out.classList.add('error');
+    } finally {
+        rbtn.classList.remove('spinning');
+    }
+}
+
+// ── confirm dialog ─────────────────────────────────────────────────────────
+function askConfirm(id, what) {
+    document.getElementById('dlg-title').textContent = what;
+    document.getElementById('dlg-msg').textContent   = 'Are you sure?';
+    document.getElementById('dlg-ok').onclick = () => { hideConfirm(); runWrite(id); };
+    document.getElementById('overlay').classList.add('show');
+}
+function hideConfirm() { document.getElementById('overlay').classList.remove('show'); }
+document.getElementById('overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('overlay')) hideConfirm();
+});
+
+// ── status polling — server health + Details button visibility ─────────────
+const dot = document.getElementById('srv-dot');
+async function pollStatus() {
+    try {
+        const d = await (await fetch('/status')).json();
+        dot.classList.remove('offline');
+        // show/hide Details buttons based on systemctl unit state
+        if (d.units) {
+            for (const [id, state] of Object.entries(d.units)) {
+                const det = document.getElementById('det-' + id);
+                if (det) det.classList.toggle('active', state === 'active');
+            }
+        }
+    } catch {
+        dot.classList.add('offline');
+    }
+}
+pollStatus();
+setInterval(pollStatus, 5000);
+
+// fetch all READ widgets on load; set up auto-refresh intervals
+document.querySelectorAll('.read-out').forEach(el => {
+    const id      = el.id.replace('out-', '');
+    const refresh = parseInt(el.dataset.refresh, 10) || 0;
+    fetchRead(id);
+    if (refresh > 0) setInterval(() => fetchRead(id), refresh * 1000);
+});
+</script>
+</body>
+</html>

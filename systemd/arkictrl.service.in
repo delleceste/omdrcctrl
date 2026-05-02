@@ -1,0 +1,14 @@
+[Unit]
+Description=Arki Control – web remote-control interface
+After=network.target
+
+[Service]
+Type=simple
+User=giacomo
+Environment=DISPLAY=:0
+ExecStart=@CMAKE_INSTALL_PREFIX@/bin/arkictrl
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

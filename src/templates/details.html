@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} — Arki Control</title>
+    <style>
+        :root {
+            --bg:      #0d1117;
+            --surface: #161b22;
+            --border:  #30363d;
+            --text:    #e6edf3;
+            --muted:   #8b949e;
+            --accent:  #388bfd;
+            --green:   #3fb950;
+            --code-bg: #1c2128;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.65;
+        }
+
+        /* ── sticky header ───────────────────────────────────── */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: color-mix(in srgb, var(--bg) 92%, transparent);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 20px;
+        }
+        .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: .9rem;
+            font-weight: 500;
+            flex-shrink: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .back-btn:hover { text-decoration: underline; }
+        .back-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        header h1 {
+            font-size: .95rem;
+            font-weight: 600;
+            color: var(--muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* ── content area ────────────────────────────────────── */
+        .md {
+            max-width: 680px;
+            margin: 0 auto;
+            padding: 28px 20px 60px;
+        }
+
+        /* ── headings ────────────────────────────────────────── */
+        .md h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            line-height: 1.2;
+            margin: 0 0 18px;
+        }
+        .md h2 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin: 32px 0 10px;
+            padding-bottom: 7px;
+            border-bottom: 1px solid var(--border);
+        }
+        .md h3 {
+            font-size: 1.08rem;
+            font-weight: 600;
+            margin: 24px 0 8px;
+        }
+        .md h4, .md h5, .md h6 {
+            font-size: .95rem;
+            font-weight: 600;
+            margin: 18px 0 6px;
+            color: var(--muted);
+        }
+
+        /* ── body text ───────────────────────────────────────── */
+        .md p { margin: 0 0 14px; }
+        .md a { color: var(--accent); text-decoration: none; }
+        .md a:hover { text-decoration: underline; }
+        .md strong { font-weight: 700; }
+        .md em { font-style: italic; }
+        .md hr { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+
+        /* ── lists ───────────────────────────────────────────── */
+        .md ul, .md ol { margin: 0 0 14px 1.5em; }
+        .md li { margin-bottom: 5px; }
+        .md li > ul, .md li > ol { margin-top: 5px; margin-bottom: 2px; }
+
+        /* ── blockquote ──────────────────────────────────────── */
+        .md blockquote {
+            border-left: 3px solid var(--border);
+            padding: 4px 0 4px 16px;
+            margin: 0 0 14px;
+            color: var(--muted);
+        }
+
+        /* ── inline code ─────────────────────────────────────── */
+        .md :not(pre) > code {
+            font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+            font-size: .83em;
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 5px;
+        }
+
+        /* ── code block ──────────────────────────────────────── */
+        .md pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 18px;
+            overflow-x: auto;
+            margin: 0 0 18px;
+            line-height: 1.55;
+        }
+        .md pre code {
+            font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+            font-size: .83rem;
+            background: none;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+        }
+
+        /* ── images ──────────────────────────────────────────── */
+        .md img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            display: block;
+            margin: 20px auto;
+        }
+        /* image caption: paragraph immediately after an image-only paragraph */
+        .md img + em {
+            display: block;
+            text-align: center;
+            font-size: .82rem;
+            color: var(--muted);
+            margin-top: -12px;
+            margin-bottom: 18px;
+        }
+
+        /* ── tables ──────────────────────────────────────────── */
+        .md table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0 0 18px;
+            font-size: .88rem;
+            display: block;
+            overflow-x: auto;
+        }
+        .md th {
+            background: var(--surface);
+            font-weight: 600;
+            text-align: left;
+            padding: 8px 13px;
+            border: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        .md td {
+            padding: 7px 13px;
+            border: 1px solid var(--border);
+            vertical-align: top;
+        }
+        .md tr:nth-child(even) td { background: rgba(255,255,255,.025); }
+    </style>
+</head>
+<body>
+
+<header>
+    <a class="back-btn" href="/">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+    </a>
+    <h1>{{ title }}</h1>
+</header>
+
+<div class="md">
+    {{ content | safe }}
+</div>
+
+</body>
+</html>
