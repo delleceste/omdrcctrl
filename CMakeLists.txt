@@ -48,8 +48,10 @@ endif()
 
 # ── install targets ────────────────────────────────────────────────────────
 
-# Python application + docs
+# Python application + docs + helper scripts
 install(FILES src/app.py README.md
+        DESTINATION lib/arkictrl)
+install(PROGRAMS src/drc-status.sh
         DESTINATION lib/arkictrl)
 
 # Jinja2 templates
