@@ -82,6 +82,17 @@ def _unit_active(unit: str) -> bool:
         return False
 
 
+def _process_running(process: str) -> bool:
+    try:
+        r = subprocess.run(
+            ["pgrep", "-x", process],
+            timeout=3, capture_output=True,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
 # ── page routes ───────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -230,7 +241,11 @@ def read_command(cmd_id):
 def status():
     units = {}
     for c in COMMANDS:
-        if "unit" in c and "details" in c:
+        if "details" not in c:
+            continue
+        if "process" in c:
+            units[c["id"]] = "active" if _process_running(c["process"]) else "inactive"
+        elif "unit" in c:
             units[c["id"]] = "active" if _unit_active(c["unit"]) else "inactive"
     return jsonify({"ok": True, "units": units})
 
