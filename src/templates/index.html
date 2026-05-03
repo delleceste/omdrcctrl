@@ -298,10 +298,6 @@
                href="{{ cmd.details_link }}"
                target="_blank"
                rel="noopener noreferrer">Details</a>
-            {% elif ('unit' in cmd or 'process' in cmd) and 'details' in cmd %}
-            <a class="btn-details"
-               id="det-{{ cmd.id }}"
-               href="/details/{{ cmd.id }}">Details</a>
             {% elif cmd.type == 'READ' and 'details_root' in cmd %}
             <a class="btn-details" id="det-{{ cmd.id }}" href="#">Details</a>
             {% endif %}
