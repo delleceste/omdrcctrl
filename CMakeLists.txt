@@ -68,7 +68,7 @@ install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/arkictrl
 # systemd service unit
 if(USER_INSTALL)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/arkictrl.service
-            DESTINATION lib/systemd/user)
+            DESTINATION share/systemd/user)
 else()
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/arkictrl.service
             DESTINATION lib/systemd/system)
@@ -85,10 +85,6 @@ message(STATUS \"\")
 message(STATUS \"Enable service (no sudo required):\")
 message(STATUS \"  systemctl --user daemon-reload\")
 message(STATUS \"  systemctl --user enable --now arkictrl\")
-message(STATUS \"\")
-message(STATUS \"Note: if the unit is not found, link it into the search path:\")
-message(STATUS \"  ln -s ${CMAKE_INSTALL_PREFIX}/lib/systemd/user/arkictrl.service\")
-message(STATUS \"        ~/.config/systemd/user/arkictrl.service\")
 message(STATUS \"\")
 message(STATUS \"Open in browser: http://<hostname>:8080\")
 ")
