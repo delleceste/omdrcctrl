@@ -544,6 +544,18 @@ function escHtml(s) {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function fmtColor(line2) {
+    const m = line2.match(/(\d+)\s*bit.*?([\d.]+)\s*kHz/i);
+    if (!m) return '';
+    const bits = parseInt(m[1], 10);
+    const khz  = parseFloat(m[2]);
+    if (bits >= 24 && khz >= 176)  return 'var(--green)';   // 192 kHz+
+    if (bits >= 24 && khz >= 88)   return '#79c0ff';        // 96 / 88.2 kHz
+    if (bits >= 24)                return '#e3b341';        // 24-bit 44/48 kHz
+    if (bits < 24  && khz >= 48)   return '#d2a8ff';        // 16-bit 48 kHz
+    return '';                                               // 16-bit 44 kHz — default
+}
+
 async function fetchQcStatus() {
     try {
         const d = await (await fetch('/qconnect/status')).json();
@@ -556,7 +568,8 @@ async function fetchQcStatus() {
             l1.textContent = '—';
             l1.classList.add('idle');
         }
-        l2.textContent = d.line2 || '';
+        l2.textContent  = d.line2 || '';
+        l2.style.color  = d.line2 ? fmtColor(d.line2) : '';
     } catch { /* ignore — status dot already signals offline */ }
 }
 
