@@ -10,7 +10,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__, template_folder=os.path.join(_HERE, "templates"))
 
-# Paths to qconnect2mpd output files; override via environment variables.
+# Paths to qconnect2mpd output files.
+# Set by [qconnect] section in commands.conf; env vars are the fallback.
 QCONNECT_STATUS_FILE = os.environ.get("QCONNECT_STATUS_FILE", "/tmp/qconnect2mpd-status.txt")
 QCONNECT_LOG_FILE    = os.environ.get("QCONNECT_LOG_FILE",    "/tmp/qconnect2mpd.log")
 
@@ -26,12 +27,20 @@ CMD_MAP:  dict[str, dict] = {}
 
 
 def load_config(path: str) -> None:
-    global COMMANDS, CMD_MAP
+    global COMMANDS, CMD_MAP, QCONNECT_STATUS_FILE, QCONNECT_LOG_FILE
     cfg = configparser.ConfigParser()
     if not cfg.read(path):
         raise FileNotFoundError(f"Config file not found: {path}")
+
+    # [qconnect] is a settings section, not a command — read and skip it.
+    if cfg.has_section("qconnect"):
+        QCONNECT_STATUS_FILE = cfg.get("qconnect", "status_file", fallback=QCONNECT_STATUS_FILE)
+        QCONNECT_LOG_FILE    = cfg.get("qconnect", "log_file",    fallback=QCONNECT_LOG_FILE)
+
     COMMANDS = []
     for sid in cfg.sections():
+        if sid == "qconnect":
+            continue
         c = dict(cfg[sid])
         c["id"] = sid
         for key in ("what", "group", "type"):
