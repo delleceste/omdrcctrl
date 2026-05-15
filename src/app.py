@@ -294,6 +294,31 @@ def qconnect_log():
         return jsonify({"ok": False, "content": str(e)})
 
 
+@app.route("/brutefir/cpu")
+def brutefir_cpu():
+    try:
+        r = subprocess.run(
+            ["ps", "-C", "brutefir", "-o", "pid,pcpu", "--no-header"],
+            capture_output=True, text=True, timeout=5,
+        )
+        procs = []
+        total = 0.0
+        for line in r.stdout.splitlines():
+            parts = line.split()
+            if len(parts) == 2:
+                try:
+                    cpu = float(parts[1])
+                    procs.append({"pid": parts[0], "cpu": cpu})
+                    total += cpu
+                except ValueError:
+                    pass
+        return jsonify({"ok": True, "procs": procs, "total": round(total, 1)})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "timeout"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/status")
 def status():
     units = {}

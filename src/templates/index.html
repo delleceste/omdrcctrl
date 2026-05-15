@@ -392,6 +392,14 @@
     </div>
 </div>
 
+<!-- Brutefir CPU panel -->
+<div class="card">
+    <div class="card-title">Brutefir CPU</div>
+    <div style="padding:12px 0" id="bf-panel">
+        <span style="color:var(--muted);font-style:italic">loading…</span>
+    </div>
+</div>
+
 <footer><a href="/readme">README</a></footer>
 
 <div id="toast"></div>
@@ -597,6 +605,42 @@ async function restartQc() {
 
 fetchQcStatus();
 setInterval(fetchQcStatus, 1000);
+
+// ── Brutefir CPU panel ─────────────────────────────────────────────────────
+async function fetchBrutefirCpu() {
+    const el = document.getElementById('bf-panel');
+    try {
+        const d = await (await fetch('/brutefir/cpu')).json();
+        if (!d.ok) {
+            el.innerHTML = `<span style="color:var(--red)">${escHtml(d.error || 'error')}</span>`;
+            return;
+        }
+        if (d.procs.length === 0) {
+            el.innerHTML = '<span style="color:var(--muted);font-style:italic">not running</span>';
+            return;
+        }
+        let html = '';
+        for (const p of d.procs) {
+            html += `<div style="display:flex;justify-content:space-between;padding:3px 0">` +
+                    `<span style="color:var(--muted);font-size:.85rem">PID ${p.pid}</span>` +
+                    `<span style="font-family:ui-monospace,monospace;font-size:.85rem">${p.cpu.toFixed(1)}%</span>` +
+                    `</div>`;
+        }
+        if (d.procs.length > 1) {
+            html += `<div style="display:flex;justify-content:space-between;` +
+                    `padding:6px 0 0;border-top:1px solid var(--border);margin-top:5px">` +
+                    `<span style="color:var(--muted);font-size:.85rem">Total</span>` +
+                    `<span style="font-family:ui-monospace,monospace;font-size:.85rem;` +
+                    `color:var(--accent)">${d.total.toFixed(1)}%</span>` +
+                    `</div>`;
+        }
+        el.innerHTML = html;
+    } catch {
+        el.innerHTML = '<span style="color:var(--red)">network error</span>';
+    }
+}
+fetchBrutefirCpu();
+setInterval(fetchBrutefirCpu, 5000);
 </script>
 </body>
 </html>
