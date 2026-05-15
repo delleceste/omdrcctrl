@@ -204,6 +204,59 @@
         #toast.ok    { border-color: var(--green); color: var(--green); }
         #toast.error { border-color: var(--red);   color: var(--red);   }
 
+        /* ── Qobuz Connect panel ─────────────────────────────── */
+        .qc-card-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .btn-log {
+            font-size: .7rem;
+            font-weight: 600;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            padding: 3px 10px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg);
+            color: var(--muted);
+            cursor: pointer;
+            transition: border-color .15s, color .15s;
+        }
+        .btn-log:hover, .btn-log.active {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        #qc-line1 {
+            font-size: .95rem;
+            font-weight: 500;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+        #qc-line1.idle { color: var(--muted); font-style: italic; }
+        #qc-line2 {
+            font-family: ui-monospace, "SFMono-Regular", monospace;
+            font-size: .78rem;
+            color: var(--muted);
+        }
+        #qconnect-log-panel {
+            border-top: 1px solid var(--border);
+            padding: 10px 0 4px;
+        }
+        .qc-log {
+            font-family: ui-monospace, "SFMono-Regular", monospace;
+            font-size: .72rem;
+            color: var(--muted);
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 260px;
+            overflow-y: auto;
+            line-height: 1.55;
+            margin: 0;
+        }
+        .qc-log .qc-err { color: var(--red); }
+        .qc-log .qc-out { color: var(--green); }
+
         /* ── footer ──────────────────────────────────────────── */
         footer {
             text-align: center;
@@ -318,6 +371,21 @@
             <button id="dlg-cancel" onclick="hideConfirm()">Cancel</button>
             <button id="dlg-ok">Confirm</button>
         </div>
+    </div>
+</div>
+
+<!-- Qobuz Connect now-playing panel -->
+<div class="card">
+    <div class="card-title qc-card-title">
+        <span>Qobuz Connect</span>
+        <button class="btn-log" id="btn-log" onclick="toggleLog()">Log</button>
+    </div>
+    <div style="padding:12px 0">
+        <div id="qc-line1" class="idle">—</div>
+        <div id="qc-line2"></div>
+    </div>
+    <div id="qconnect-log-panel" style="display:none">
+        <pre id="qc-log-content" class="qc-log"></pre>
     </div>
 </div>
 
@@ -449,6 +517,63 @@ document.querySelectorAll('.read-out').forEach(el => {
     fetchRead(id);
     if (refresh > 0) setInterval(() => fetchRead(id), refresh * 1000);
 });
+
+// ── Qobuz Connect panel ────────────────────────────────────────────────────
+function escHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function fetchQcStatus() {
+    try {
+        const d = await (await fetch('/qconnect/status')).json();
+        const l1 = document.getElementById('qc-line1');
+        const l2 = document.getElementById('qc-line2');
+        if (d.line1) {
+            l1.textContent = d.line1;
+            l1.classList.remove('idle');
+        } else {
+            l1.textContent = '—';
+            l1.classList.add('idle');
+        }
+        l2.textContent = d.line2 || '';
+    } catch { /* ignore — status dot already signals offline */ }
+}
+
+let qcLogVisible = false;
+let qcLogTimer   = null;
+
+async function fetchQcLog() {
+    const el = document.getElementById('qc-log-content');
+    try {
+        const d = await (await fetch('/qconnect/log')).json();
+        const text = d.content || '(empty)';
+        el.innerHTML = text.split('\n').map(line => {
+            const safe = escHtml(line);
+            if (line.includes('[ERR]')) return `<span class="qc-err">${safe}</span>`;
+            if (line.includes('[OUT]')) return `<span class="qc-out">${safe}</span>`;
+            return safe;
+        }).join('\n');
+        el.scrollTop = el.scrollHeight;
+    } catch {
+        el.textContent = 'network error';
+    }
+}
+
+function toggleLog() {
+    qcLogVisible = !qcLogVisible;
+    document.getElementById('qconnect-log-panel').style.display = qcLogVisible ? 'block' : 'none';
+    document.getElementById('btn-log').classList.toggle('active', qcLogVisible);
+    if (qcLogVisible) {
+        fetchQcLog();
+        qcLogTimer = setInterval(fetchQcLog, 5000);
+    } else {
+        clearInterval(qcLogTimer);
+        qcLogTimer = null;
+    }
+}
+
+fetchQcStatus();
+setInterval(fetchQcStatus, 1000);
 </script>
 </body>
 </html>

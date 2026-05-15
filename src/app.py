@@ -10,6 +10,10 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__, template_folder=os.path.join(_HERE, "templates"))
 
+# Paths to qconnect2mpd output files; override via environment variables.
+QCONNECT_STATUS_FILE = os.environ.get("QCONNECT_STATUS_FILE", "/tmp/qconnect2mpd-status.txt")
+QCONNECT_LOG_FILE    = os.environ.get("QCONNECT_LOG_FILE",    "/tmp/qconnect2mpd.log")
+
 GROUP_ORDER  = ["drc", "apps", "system"]
 GROUP_LABELS = {
     "drc":    "Digital Room Correction",
@@ -235,6 +239,34 @@ def read_command(cmd_id):
         return jsonify(resp)
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "output": "timeout"})
+
+
+@app.route("/qconnect/status")
+def qconnect_status():
+    try:
+        with open(QCONNECT_STATUS_FILE, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        return jsonify({
+            "ok":    True,
+            "line1": lines[0] if len(lines) > 0 else "",
+            "line2": lines[1] if len(lines) > 1 else "",
+        })
+    except FileNotFoundError:
+        return jsonify({"ok": False, "line1": "", "line2": ""})
+    except OSError as e:
+        return jsonify({"ok": False, "line1": "", "line2": "", "error": str(e)})
+
+
+@app.route("/qconnect/log")
+def qconnect_log():
+    try:
+        with open(QCONNECT_LOG_FILE, encoding="utf-8") as f:
+            content = f.read()
+        return jsonify({"ok": True, "content": content})
+    except FileNotFoundError:
+        return jsonify({"ok": True, "content": "(log file not found)"})
+    except OSError as e:
+        return jsonify({"ok": False, "content": str(e)})
 
 
 @app.route("/status")
