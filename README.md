@@ -172,14 +172,29 @@ All commands are defined in `commands.conf` (INI format, parsed by Python's
 Each `[section]` is one command. The section name is the internal id and must
 be unique and contain no spaces.
 
+### Reserved section: `[qconnect]`
+
+`[qconnect]` is not a command — it configures the Qobuz Connect integration.
+Both keys are optional; the defaults match the qobuzconnect2mpd defaults.
+
+```ini
+[qconnect]
+status_file = /tmp/qconnect2mpd-status.txt
+log_file    = /tmp/qconnect2mpd.log
+```
+
+These paths are consumed by the `/qconnect/status` and `/qconnect/log` API
+endpoints.  Change them only if you set non-default paths in qobuzconnect2mpd's
+config (`qconnectstatusfile` / `qconnectlogfile`).
+
 ### Keys common to all commands
 
 | Key | Required | Description |
 |---|---|---|
 | `what` | yes | Label text shown in the UI |
 | `group` | yes | Card/section name (`drc`, `apps`, `system`, or any custom name) |
-| `type` | yes | `READ` or `WRITE` |
-| `cmd` | yes | Shell command to execute |
+| `type` | yes | `READ`, `WRITE`, or `LINK` |
+| `cmd` | READ / WRITE | Shell command to execute |
 
 ### WRITE-only keys
 
@@ -195,19 +210,25 @@ be unique and contain no spaces.
 | `refresh` | no | Auto-refresh interval in seconds; `0` or omitted = manual only |
 | `details_root` | no | Root directory for dynamic details lookup (see below) |
 
-### Static details (WRITE commands)
+### LINK-only keys
 
-Any WRITE command can expose a **Details** button linked to a fixed Markdown
-file. Two keys work together:
+| Key | Required | Description |
+|---|---|---|
+| `url` | yes | URL opened in a new tab when the user taps **Open ↗** |
+
+### Optional detail/status keys (READ or WRITE)
+
+Any command can expose a **Details** button. Three mutually exclusive approaches:
 
 | Key | Description |
 |---|---|
-| `unit` | systemctl unit name — the Details button appears when `systemctl is-active <unit>` exits 0 |
-| `details` | absolute path to a `.md` file rendered on the details page |
+| `process` | Process name checked with `pgrep -x`; Details button appears when the process is running. Prefer over `unit` to avoid systemd side-effects. |
+| `unit` | systemctl unit name; Details button appears when `systemctl is-active <unit>` exits 0. |
+| `details_link` | External URL for a Details button that is *always* visible (not conditional on process/unit). |
+| `details` | Absolute path to a `.md` file rendered on the details page (required with `process` or `unit`). |
 
-Both keys must be present. The Details button is hidden while the unit is
-inactive and appears automatically (within 5 s). `/status` is polled every
-5 seconds for all commands that carry both keys.
+`/status` is polled every 5 seconds for all commands that carry `process` or
+`unit` together with `details`.
 
 ### Dynamic details (READ commands)
 
@@ -391,6 +412,88 @@ Serves files relative to the dynamic Markdown file directory (images, etc.).
 ### `GET /readme`
 
 Renders this README as an HTML page.
+
+---
+
+### `GET /qconnect/status`
+
+Reads the qobuzconnect2mpd status file and returns the two display lines.
+
+```json
+{ "ok": true, "line1": "[playing] Artist - Title  [1:23 / 4:56]", "line2": "FLAC 16 bit 44.1 kHz" }
+{ "ok": false, "line1": "", "line2": "" }
+```
+
+---
+
+### `GET /qconnect/log`
+
+Returns the full content of the qobuzconnect2mpd log file as a string.
+
+```json
+{ "ok": true, "content": "2026-05-15 14:32:01 [OUT] ..." }
+```
+
+---
+
+### `POST /qconnect/restart`
+
+Restarts the qobuzconnect2mpd user service via
+`systemctl --user restart qobuzconnect2mpd`.
+
+```json
+{ "ok": true }
+{ "ok": false, "error": "..." }
+```
+
+---
+
+### `GET /brutefir/cpu`
+
+Returns per-process CPU usage for all running `brutefir` instances, plus the
+sum. Uses `ps -C brutefir -o pid,pcpu`.
+
+```json
+{
+  "ok": true,
+  "procs": [
+    { "pid": "12345", "cpu": 24.5 },
+    { "pid": "12346", "cpu": 23.8 }
+  ],
+  "total": 48.3
+}
+```
+
+`procs` is empty (not an error) when brutefir is not running.
+
+---
+
+## Built-in monitoring panels
+
+In addition to the configurable command cards, two fixed panels always appear
+at the bottom of the page.
+
+### Qobuz Connect
+
+Shows the track currently playing via qobuzconnect2mpd, updated every second:
+
+- Line 1: playback state + artist/title + position/duration
+  (`[playing] Artist - Title  [1:23 / 4:56]`)
+- Line 2: audio format (`FLAC 24 bit, stereo, 96.0 kHz`)
+
+Two buttons in the panel header:
+- **Restart** — calls `POST /qconnect/restart`; shows a toast on success/failure
+- **Log** — toggles a scrollable log viewer (auto-refreshed every 5 s while
+  open) with colour-coded lines: red for `[ERR]`, green for `[OUT]`
+
+File paths are configured via the `[qconnect]` section in `commands.conf`.
+
+### Brutefir CPU
+
+Shows per-process CPU usage for every running `brutefir` process, refreshed
+every 5 seconds. When more than one process is detected (brutefir typically
+spawns four worker processes) a highlighted **Total** line is appended.
+Displays "not running" when brutefir is not active.
 
 ---
 
