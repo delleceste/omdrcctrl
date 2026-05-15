@@ -378,7 +378,10 @@
 <div class="card">
     <div class="card-title qc-card-title">
         <span>Qobuz Connect</span>
-        <button class="btn-log" id="btn-log" onclick="toggleLog()">Log</button>
+        <div style="display:flex;gap:6px">
+            <button class="btn-log" id="btn-restart" onclick="restartQc()">Restart</button>
+            <button class="btn-log" id="btn-log" onclick="toggleLog()">Log</button>
+        </div>
     </div>
     <div style="padding:12px 0">
         <div id="qc-line1" class="idle">—</div>
@@ -570,6 +573,26 @@ function toggleLog() {
         clearInterval(qcLogTimer);
         qcLogTimer = null;
     }
+}
+
+async function restartQc() {
+    const btn = document.getElementById('btn-restart');
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+        const d = await (await fetch('/qconnect/restart', { method: 'POST' })).json();
+        if (d.ok) {
+            toast('qobuzconnect2mpd restarted', 'ok');
+        } else {
+            toast(d.error || 'restart failed', 'error');
+        }
+    } catch {
+        toast('network error', 'error');
+    }
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = 'Restart';
+    }, 2000);
 }
 
 fetchQcStatus();

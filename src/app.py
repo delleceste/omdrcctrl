@@ -257,6 +257,22 @@ def qconnect_status():
         return jsonify({"ok": False, "line1": "", "line2": "", "error": str(e)})
 
 
+@app.route("/qconnect/restart", methods=["POST"])
+def qconnect_restart():
+    try:
+        r = subprocess.run(
+            ["systemctl", "--user", "restart", "qobuzconnect2mpd"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return jsonify({"ok": False, "error": (r.stderr or r.stdout).strip()})
+        return jsonify({"ok": True})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "timeout"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/qconnect/log")
 def qconnect_log():
     try:
