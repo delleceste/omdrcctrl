@@ -20,7 +20,7 @@ QCONNECT_LOG_FILE    = os.environ.get("QCONNECT_LOG_FILE",    "/tmp/qconnect2mpd
 # [monitor] section defaults
 TOPCPU_THRESHOLD = 4.0   # minimum %CPU to include in the top-processes list
 MONITOR_INTERVAL = 5     # seconds between MPD refreshes
-TOPCPU_INTERVAL = 20     # seconds between top-CPU refreshes
+TOPCPU_INTERVAL = 3      # seconds between top-CPU refreshes
 _TOPCPU_CACHE: dict | None = None
 _TOPCPU_CACHE_AT = 0.0
 
