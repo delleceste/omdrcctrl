@@ -4,6 +4,7 @@ import re
 import shlex
 import subprocess
 import configparser
+import time
 import markdown as md_lib
 from flask import Flask, render_template, jsonify, send_from_directory
 
@@ -18,7 +19,10 @@ QCONNECT_LOG_FILE    = os.environ.get("QCONNECT_LOG_FILE",    "/tmp/qconnect2mpd
 
 # [monitor] section defaults
 TOPCPU_THRESHOLD = 4.0   # minimum %CPU to include in the top-processes list
-MONITOR_INTERVAL = 5     # seconds between MPD/top-CPU refreshes
+MONITOR_INTERVAL = 5     # seconds between MPD refreshes
+TOPCPU_INTERVAL = 20     # seconds between top-CPU refreshes
+_TOPCPU_CACHE: dict | None = None
+_TOPCPU_CACHE_AT = 0.0
 
 GROUP_ORDER  = ["drc", "apps", "system"]
 GROUP_LABELS = {
@@ -33,7 +37,7 @@ CMD_MAP:  dict[str, dict] = {}
 
 def load_config(path: str) -> None:
     global COMMANDS, CMD_MAP, QCONNECT_STATUS_FILE, QCONNECT_LOG_FILE
-    global TOPCPU_THRESHOLD, MONITOR_INTERVAL
+    global TOPCPU_THRESHOLD, MONITOR_INTERVAL, TOPCPU_INTERVAL
     cfg = configparser.ConfigParser()
     if not cfg.read(path):
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -46,7 +50,8 @@ def load_config(path: str) -> None:
     # [monitor] is a settings section — read and skip it.
     if cfg.has_section("monitor"):
         TOPCPU_THRESHOLD = cfg.getfloat("monitor", "topcpu_threshold", fallback=TOPCPU_THRESHOLD)
-        MONITOR_INTERVAL = cfg.getint("monitor",   "monitor_interval", fallback=MONITOR_INTERVAL)
+        MONITOR_INTERVAL = max(1, cfg.getint("monitor", "monitor_interval", fallback=MONITOR_INTERVAL))
+        TOPCPU_INTERVAL = max(1, cfg.getint("monitor", "topcpu_interval", fallback=TOPCPU_INTERVAL))
 
     _RESERVED = {"qconnect", "monitor"}
     COMMANDS = []
@@ -165,6 +170,7 @@ def index():
         groups=_groups(),
         topcpu_threshold=TOPCPU_THRESHOLD,
         monitor_interval=MONITOR_INTERVAL,
+        topcpu_interval=TOPCPU_INTERVAL,
     )
 
 
@@ -395,6 +401,11 @@ def mpd_info():
 
 @app.route("/system/topcpu")
 def system_topcpu():
+    global _TOPCPU_CACHE, _TOPCPU_CACHE_AT
+    now = time.monotonic()
+    if _TOPCPU_CACHE is not None and now - _TOPCPU_CACHE_AT < TOPCPU_INTERVAL:
+        return jsonify(_TOPCPU_CACHE)
+
     try:
         r = subprocess.run(
             ["ps", "-eo", "user,pid,pcpu,comm", "--sort=-%cpu", "--no-header"],
@@ -409,10 +420,19 @@ def system_topcpu():
                 cpu = float(parts[2])
             except ValueError:
                 continue
+            if parts[3] == "ps":
+                continue
             if cpu < TOPCPU_THRESHOLD:
                 break   # list is sorted descending
             procs.append({"user": parts[0], "pid": parts[1], "cpu": cpu, "name": parts[3]})
-        return jsonify({"ok": True, "procs": procs, "threshold": TOPCPU_THRESHOLD})
+        _TOPCPU_CACHE = {
+            "ok": True,
+            "procs": procs,
+            "threshold": TOPCPU_THRESHOLD,
+            "interval": TOPCPU_INTERVAL,
+        }
+        _TOPCPU_CACHE_AT = now
+        return jsonify(_TOPCPU_CACHE)
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "timeout"})
     except Exception as e:

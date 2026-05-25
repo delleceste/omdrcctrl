@@ -432,6 +432,7 @@
 
 <script>
 const MONITOR_INTERVAL_MS = {{ monitor_interval }} * 1000;
+const TOPCPU_INTERVAL_MS  = {{ topcpu_interval }} * 1000;
 const TOPCPU_THRESHOLD    = {{ topcpu_threshold }};
 
 // ── toast ──────────────────────────────────────────────────────────────────
@@ -740,7 +741,7 @@ async function fetchTopCpu() {
     }
 }
 fetchTopCpu();
-setInterval(fetchTopCpu, MONITOR_INTERVAL_MS);
+setInterval(fetchTopCpu, TOPCPU_INTERVAL_MS);
 </script>
 </body>
 </html>

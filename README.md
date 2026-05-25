@@ -495,6 +495,13 @@ every 5 seconds. When more than one process is detected (brutefir typically
 spawns four worker processes) a highlighted **Total** line is appended.
 Displays "not running" when brutefir is not active.
 
+### Top CPU
+
+Shows processes above `topcpu_threshold`, refreshed every `topcpu_interval`
+seconds from the `[monitor]` section of `commands.conf`. The server caches this
+result for the same interval so multiple browser clients do not run extra `ps`
+commands.
+
 ---
 
 ## Security note
