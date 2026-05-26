@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=giacomo
+User=@ARKICTRL_SERVICE_USER@
 Environment=DISPLAY=:0
 ExecStart=@CMAKE_INSTALL_PREFIX@/bin/arkictrl
 Restart=on-failure

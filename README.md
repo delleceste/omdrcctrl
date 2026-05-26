@@ -1,6 +1,6 @@
 # arkictrl
 
-A lightweight web-based remote control panel for a Linux desktop.
+A lightweight web-based remote control panel for a Linux or FreeBSD desktop.
 Commands are defined in a plain-text INI config file; the server renders a
 mobile-friendly interface that can be opened in any browser on the local
 network — phone, tablet, or another computer.
@@ -29,8 +29,8 @@ provides no feedback. Every command here either shows its output directly
   installing any app.
 - **No hard-coded commands** — everything lives in `commands.conf`; restart
   the service to pick up changes.
-- **CMake install** — single `cmake --install` copies all files and writes a
-  ready-to-use systemd unit.
+- **CMake install** — single `cmake --install` copies all files and installs
+  the matching service integration: systemd on Linux, rc.d on FreeBSD.
 
 ---
 
@@ -42,7 +42,7 @@ provides no feedback. Every command here either shows its output directly
 | Flask ≥ 2.3 | `pip install flask` |
 | Markdown ≥ 3.5 | `pip install markdown` — renders details pages |
 | CMake ≥ 3.16 | build / install only |
-| systemd | service management |
+| systemd or rc.d | service management: systemd on Linux, rc.d on FreeBSD |
 
 ---
 
@@ -60,8 +60,11 @@ arkictrl/
 │   └── templates/
 │       ├── index.html       # Jinja2 + vanilla-JS control panel
 │       └── details.html     # markdown details page
+├── rc.d/
+│   └── arkictrl.in          # FreeBSD rc.d script template
 └── systemd/
-    └── arkictrl.service.in  # systemd unit template
+    ├── arkictrl.service.in       # Linux system service template
+    └── arkictrl-user.service.in  # Linux user service template
 ```
 
 ---
@@ -75,21 +78,28 @@ pip install flask markdown
 # 2. configure
 mkdir build && cd build
 
-# system-wide install (default prefix /usr/local, requires sudo)
+# system-wide install (default prefix /usr/local, requires sudo for install)
 cmake ..
 
-# — or — user install (no root required, prefix defaults to ~/.local)
+# Linux only: user install with systemd --user (no root required, prefix defaults to ~/.local)
 cmake .. -DUSER_INSTALL=ON
 
 # override the prefix explicitly if needed
 cmake .. -DUSER_INSTALL=ON -DCMAKE_INSTALL_PREFIX=~/.local
 
+# system services run as the configuring user by default; override if needed
+cmake .. -DARKICTRL_SERVICE_USER=myuser
+
 # 3. install
 sudo cmake --install .        # system install
-cmake --install .             # user install (no sudo)
+cmake --install .             # Linux user install (no sudo)
 ```
 
-### System install paths (prefix `/usr/local`)
+On Linux, CMake installs systemd units. On FreeBSD, CMake installs an rc.d
+script and rejects `-DUSER_INSTALL=ON` because systemd user services are not
+available there.
+
+### Linux system install paths (prefix `/usr/local`)
 
 | Path | Contents |
 |---|---|
@@ -100,7 +110,7 @@ cmake --install .             # user install (no sudo)
 | `/usr/local/etc/arkictrl/commands.conf` | command definitions |
 | `/usr/local/lib/systemd/system/arkictrl.service` | systemd system unit |
 
-### User install paths (prefix `~/.local`)
+### Linux user install paths (prefix `~/.local`)
 
 | Path | Contents |
 |---|---|
@@ -111,11 +121,29 @@ cmake --install .             # user install (no sudo)
 | `~/.local/etc/arkictrl/commands.conf` | command definitions |
 | `~/.local/share/systemd/user/arkictrl.service` | systemd user unit |
 
+### FreeBSD system install paths (prefix `/usr/local`)
+
+| Path | Contents |
+|---|---|
+| `/usr/local/bin/arkictrl` | launcher shell script |
+| `/usr/local/lib/arkictrl/app.py` | Flask application |
+| `/usr/local/lib/arkictrl/README.md` | this file (served at `/readme`) |
+| `/usr/local/lib/arkictrl/templates/` | HTML templates |
+| `/usr/local/etc/arkictrl/commands.conf` | command definitions |
+| `/usr/local/etc/rc.d/arkictrl` | FreeBSD rc.d service script |
+
 ---
 
-## Running as a systemd service
+## Running as a service
 
-### System service
+### Linux systemd system service
+
+The service runs as `ARKICTRL_SERVICE_USER`, which defaults to the user that
+configured the CMake build. Override it during configure when needed:
+
+```bash
+cmake .. -DARKICTRL_SERVICE_USER=myuser
+```
 
 ```bash
 sudo systemctl daemon-reload
@@ -123,10 +151,7 @@ sudo systemctl enable --now arkictrl
 sudo systemctl status arkictrl
 ```
 
-The service runs as user `giacomo` (edit `systemd/arkictrl.service.in` before
-installing to change this).
-
-### User service (`-DUSER_INSTALL=ON`)
+### Linux systemd user service (`-DUSER_INSTALL=ON`)
 
 No root required. The service runs as your own user automatically.
 
@@ -147,6 +172,31 @@ loginctl enable-linger $USER
 ```bash
 sudo systemctl restart arkictrl          # system
 systemctl --user restart arkictrl        # user
+```
+
+### FreeBSD rc.d service
+
+The rc.d script uses `daemon(8)` and is installed to
+`/usr/local/etc/rc.d/arkictrl`.
+
+```bash
+sudo sysrc arkictrl_enable=YES
+sudo service arkictrl start
+sudo service arkictrl status
+```
+
+The service user defaults to `ARKICTRL_SERVICE_USER`, which is set when CMake is
+configured. You can override it through rc.conf:
+
+```bash
+sudo sysrc arkictrl_user=myuser
+sudo sysrc arkictrl_env='DISPLAY=:0'
+```
+
+Restart after config changes:
+
+```bash
+sudo service arkictrl restart
 ```
 
 ---
@@ -222,8 +272,8 @@ Any command can expose a **Details** button. Three mutually exclusive approaches
 
 | Key | Description |
 |---|---|
-| `process` | Process name checked with `pgrep -x`; Details button appears when the process is running. Prefer over `unit` to avoid systemd side-effects. |
-| `unit` | systemctl unit name; Details button appears when `systemctl is-active <unit>` exits 0. |
+| `process` | Process name checked with `pgrep -x`; Details button appears when the process is running. Prefer over `unit` for portable configs and to avoid systemd side-effects. |
+| `unit` | Linux/systemd unit name; Details button appears when `systemctl is-active <unit>` exits 0. |
 | `details_link` | External URL for a Details button that is *always* visible (not conditional on process/unit). |
 | `details` | Absolute path to a `.md` file rendered on the details page (required with `process` or `unit`). |
 
@@ -373,9 +423,11 @@ included.
 
 ### `GET /status`
 
-Server health check and unit-active query. For every command that has both
-`unit` and `details` configured the server runs `systemctl is-active --quiet
-<unit>` and includes the result. The browser polls this every 5 seconds.
+Server health check and status query. For every command that has both
+`process` and `details` configured the server checks `pgrep -x <process>`.
+For Linux/systemd commands that have both `unit` and `details` configured, the
+server runs `systemctl is-active --quiet <unit>`. The browser polls this every
+5 seconds.
 
 ```json
 { "ok": true, "units": { "drc_flat": "active", "drc_2db": "inactive" } }
@@ -439,7 +491,8 @@ Returns the full content of the qobuzconnect2mpd log file as a string.
 ### `POST /qconnect/restart`
 
 Restarts the qobuzconnect2mpd user service via
-`systemctl --user restart qobuzconnect2mpd`.
+`systemctl --user restart qobuzconnect2mpd`. This endpoint is Linux/systemd
+specific; on FreeBSD, use regular command widgets for service actions.
 
 ```json
 { "ok": true }

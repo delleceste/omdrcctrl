@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# PROVIDE: arkictrl
+# REQUIRE: NETWORKING LOGIN
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="arkictrl"
+rcvar="arkictrl_enable"
+
+load_rc_config "$name"
+
+: ${arkictrl_enable:="NO"}
+: ${arkictrl_user:="@ARKICTRL_SERVICE_USER@"}
+: ${arkictrl_env:="DISPLAY=:0"}
+
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/daemon"
+command_args="-f -p ${pidfile} -u ${arkictrl_user} @CMAKE_INSTALL_PREFIX@/bin/arkictrl"
+
+run_rc_command "$1"

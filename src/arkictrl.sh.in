@@ -1,4 +1,4 @@
-#!/bin/bash
-exec python3 "@CMAKE_INSTALL_PREFIX@/lib/arkictrl/app.py" \
+#!/bin/sh
+exec "@PYTHON3@" "@CMAKE_INSTALL_PREFIX@/lib/arkictrl/app.py" \
     --config "@CMAKE_INSTALL_PREFIX@/etc/arkictrl/commands.conf" \
     "$@"
