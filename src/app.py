@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import platform
+import pwd
 import re
 import shlex
 import subprocess
@@ -116,6 +117,9 @@ def _groups() -> list[tuple]:
 
 def _env() -> dict:
     e = dict(os.environ)
+    if not e.get("HOME") or e["HOME"] == "/":
+        e["HOME"] = pwd.getpwuid(os.getuid()).pw_dir
+    e.setdefault("XDG_CONFIG_HOME", os.path.join(e["HOME"], ".config"))
     e.setdefault("DISPLAY", ":0")
     # FreeBSD rc.d services start with a minimal PATH that omits /usr/local/{s,}bin
     # where brutefir, mpc, virtual_oss, pgrep, … live.
