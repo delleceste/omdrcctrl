@@ -363,10 +363,12 @@ def qconnect_log():
 @app.route("/mpd/info")
 def mpd_info():
     try:
-        # -A -o: portable across Linux and FreeBSD (see system_topcpu comment).
-        # args= gives the full command line; comm= is the basename used to filter.
+        # BSD-style 'ax' (no dash): 'a'=all users, 'x'=include processes
+        # without a controlling terminal (daemons). On FreeBSD, POSIX -A/-a
+        # skips daemons unless combined with POSIX -x, but POSIX -x means
+        # "convert args to paths" there — so 'ax' is the only safe form.
         r = subprocess.run(
-            ["ps", "-A", "-o", "pcpu=,comm=,args="],
+            ["ps", "ax", "-o", "pcpu=,comm=,args="],
             capture_output=True, text=True, timeout=5,
         )
         cpu_total = 0.0
@@ -454,12 +456,10 @@ def system_topcpu():
         return jsonify(_TOPCPU_CACHE)
 
     try:
-        # -A (POSIX) selects all processes on both Linux and FreeBSD.
-        # -ax would work on Linux but on FreeBSD POSIX -x means "convert
-        # args to paths", not "include processes without a terminal", so
-        # daemon processes like brutefir would be silently skipped.
+        # BSD-style 'ax': includes processes without a controlling terminal
+        # on both Linux and FreeBSD. See mpd_info for the full explanation.
         r = subprocess.run(
-            ["ps", "-A", "-o", "user=,pid=,pcpu=,comm="],
+            ["ps", "ax", "-o", "user=,pid=,pcpu=,comm="],
             capture_output=True, text=True, timeout=5,
         )
         procs = []
@@ -513,10 +513,9 @@ def drc_geometry():
 @app.route("/brutefir/cpu")
 def brutefir_cpu():
     try:
-        # -A (POSIX) selects all processes; see system_topcpu for why
-        # -ax is avoided on FreeBSD.
+        # BSD-style 'ax': see mpd_info for explanation.
         r = subprocess.run(
-            ["ps", "-A", "-o", "pid=,pcpu=,comm="],
+            ["ps", "ax", "-o", "pid=,pcpu=,comm="],
             capture_output=True, text=True, timeout=5,
         )
         procs = []
