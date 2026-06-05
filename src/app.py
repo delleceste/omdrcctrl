@@ -3,6 +3,7 @@ import os
 import platform
 import pwd
 import re
+import shutil
 import shlex
 import subprocess
 import configparser
@@ -300,6 +301,146 @@ def _mpd_port_from_conf(conf_path: str) -> str | None:
     return None
 
 
+def _mpc_client() -> list[str] | None:
+    preferred = ("musicpc", "mpc") if platform.system() == "FreeBSD" else ("mpc", "musicpc")
+    path = _env().get("PATH")
+    for name in preferred:
+        exe = shutil.which(name, path=path)
+        if exe:
+            return [exe]
+    return None
+
+
+def _parse_mpc_audio(audio: str) -> dict:
+    parsed = {"sample_rate": None, "bit_depth": None, "channels": None}
+    m = re.search(r'(\d+(?:\.\d+)?)\s*kHz\b', audio, re.I)
+    if m:
+        parsed["sample_rate"] = int(round(float(m.group(1)) * 1000))
+    else:
+        m = re.search(r'(\d+)\s*Hz\b', audio, re.I)
+        if m:
+            parsed["sample_rate"] = int(m.group(1))
+
+    m = re.search(r'(\d+)\s*bits?\b', audio, re.I)
+    if m:
+        parsed["bit_depth"] = int(m.group(1))
+
+    m = re.search(r'(\d+)\s*channels?\b', audio, re.I)
+    if m:
+        parsed["channels"] = int(m.group(1))
+    elif re.search(r'\bstereo\b', audio, re.I):
+        parsed["channels"] = 2
+    elif re.search(r'\bmono\b', audio, re.I):
+        parsed["channels"] = 1
+
+    if parsed["sample_rate"] is None:
+        m = re.search(r'\b(\d{4,6})\s*:\s*(\d+)\s*:\s*(\d+)\b', audio)
+        if m:
+            parsed["sample_rate"] = int(m.group(1))
+            parsed["bit_depth"] = int(m.group(2))
+            parsed["channels"] = int(m.group(3))
+    return parsed
+
+
+def _mpc_status(port: str | None = None) -> dict:
+    cmd = _mpc_client()
+    if not cmd:
+        return {"client": None, "state": "unknown", "error": "mpc/musicpc not found"}
+    if port:
+        cmd = cmd + ["-p", str(port)]
+    cmd.append("status")
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=_env())
+    text = (r.stdout + r.stderr).strip()
+    info = {
+        "client": os.path.basename(cmd[0]),
+        "state": "stopped",
+        "song": "",
+        "audio": "",
+        "sample_rate": None,
+        "bit_depth": None,
+        "channels": None,
+        "error": "",
+    }
+    if r.returncode != 0:
+        info["state"] = "unknown"
+        info["error"] = text or f"exit {r.returncode}"
+        return info
+
+    lines = text.splitlines()
+    state_line = next((line for line in lines if re.search(r'\[(playing|paused|stopped)\]', line)), "")
+    if state_line:
+        m = re.search(r'\[(playing|paused|stopped)\]', state_line)
+        if m:
+            info["state"] = m.group(1)
+        state_idx = lines.index(state_line)
+        if state_idx > 0:
+            info["song"] = lines[state_idx - 1].strip()
+
+    for line in lines:
+        if re.search(r'^(audio|format)\s*:', line, re.I):
+            _, _, audio = line.partition(":")
+            info["audio"] = audio.strip()
+            info.update(_parse_mpc_audio(info["audio"]))
+            break
+
+    return info
+
+
+def _ps_arg_lines() -> list[str]:
+    for cmd in (["ps", "axo", "args"], ["ps", "ax", "-o", "args="]):
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            return [
+                line.strip() for line in r.stdout.splitlines()
+                if line.strip() and line.strip().lower() != "args"
+            ]
+    return []
+
+
+def _virtual_oss_rate() -> int | None:
+    for line in _ps_arg_lines():
+        try:
+            parts = shlex.split(line)
+        except ValueError:
+            parts = line.split()
+        if not parts:
+            continue
+        name = os.path.basename(parts[0])
+        if name == "sudo" and len(parts) > 1:
+            name = os.path.basename(parts[1])
+            args = parts[1:]
+        else:
+            args = parts
+        if name != "virtual_oss":
+            continue
+        for i, arg in enumerate(args):
+            if arg == "-r" and i + 1 < len(args):
+                try:
+                    return int(args[i + 1])
+                except ValueError:
+                    return None
+    return None
+
+
+def _brutefir_rate() -> int | None:
+    for line in _ps_arg_lines():
+        if "brutefir" not in line:
+            continue
+        m = re.search(r'brutefir-(\d+)[^ /]*\.conf', line)
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def _rate_status(mpd_rate: int | None, virtual_rate: int | None, brutefir_rate: int | None) -> dict:
+    rates = [r for r in (virtual_rate, brutefir_rate) if r]
+    if not mpd_rate or not rates:
+        return {"kind": "unknown", "text": "sample-rate comparison unavailable"}
+    if all(mpd_rate == r for r in rates):
+        return {"kind": "match", "text": "SAMPLE RATE MATCH"}
+    return {"kind": "mismatch", "text": "RESAMPLING"}
+
+
 def _control_title() -> str:
     try:
         r = subprocess.run(
@@ -572,12 +713,27 @@ def mpd_info():
                     break
 
         port = _mpd_port_from_conf(conf) if conf else None
+        mpc = _mpc_status(port)
+        voss_rate = _virtual_oss_rate()
+        bf_rate = _brutefir_rate()
+        rate_status = _rate_status(mpc["sample_rate"], voss_rate, bf_rate)
         return jsonify({
             "ok":      True,
             "running": running,
             "cpu":     round(cpu_total, 1),
             "conf":    conf  or "(unknown)",
             "port":    port  or "6600",
+            "client":  mpc["client"] or "(not found)",
+            "state":   mpc["state"],
+            "song":    mpc["song"],
+            "audio":   mpc["audio"],
+            "sample_rate": mpc["sample_rate"],
+            "bit_depth": mpc["bit_depth"],
+            "channels": mpc["channels"],
+            "mpc_error": mpc["error"],
+            "virtual_oss_rate": voss_rate,
+            "brutefir_rate": bf_rate,
+            "rate_status": rate_status,
         })
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "timeout"})

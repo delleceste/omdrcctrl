@@ -73,6 +73,18 @@
             color: var(--muted);
             white-space: nowrap;
         }
+        .title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+        .title-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
 
         /* ── row ─────────────────────────────────────────────── */
         .row {
@@ -395,8 +407,9 @@
 <!-- Qobuz Connect now-playing panel (top) -->
 <div class="card">
     <div class="card-title qc-card-title">
-        <span>Qobuz Connect <span class="refresh-note">refresh: 1s</span></span>
-        <div style="display:flex;gap:6px">
+        <span>Qobuz Connect <span class="refresh-note" id="qc-refresh-label">refresh: 1s</span></span>
+        <div class="title-actions">
+            <button class="btn-refresh" id="qc-refresh-btn" title="Refresh">↻</button>
             <button class="btn-log" id="btn-restart" onclick="restartQc()">Restart</button>
             <button class="btn-log" id="btn-log" onclick="toggleLog()">Log</button>
         </div>
@@ -412,7 +425,10 @@
 
 <!-- MPD info panel -->
 <div class="card">
-    <div class="card-title">MPD <span class="refresh-note">refresh: {{ monitor_interval }}s</span></div>
+    <div class="card-title title-row">
+        <span>MPD <span class="refresh-note" id="mpd-refresh-label">refresh: {{ monitor_interval }}s</span></span>
+        <button class="btn-refresh" id="mpd-refresh-btn" title="Refresh">↻</button>
+    </div>
     <div id="mpd-panel" style="padding:4px 0">
         <span style="color:var(--muted);font-style:italic">loading…</span>
     </div>
@@ -447,7 +463,10 @@
 
 <!-- Brutefir CPU panel -->
 <div class="card">
-    <div class="card-title">Brutefir CPU <span class="refresh-note">refresh: {{ brutefir_interval }}s</span></div>
+    <div class="card-title title-row">
+        <span>Brutefir CPU <span class="refresh-note" id="bf-refresh-label">refresh: {{ brutefir_interval }}s</span></span>
+        <button class="btn-refresh" id="bf-refresh-btn" title="Refresh">↻</button>
+    </div>
     <div style="padding:12px 0" id="bf-panel">
         <span style="color:var(--muted);font-style:italic">loading…</span>
     </div>
@@ -455,7 +474,10 @@
 
 <!-- RAM panel -->
 <div class="card">
-    <div class="card-title">RAM <span class="refresh-note">refresh: 10s</span></div>
+    <div class="card-title title-row">
+        <span>RAM <span class="refresh-note" id="ram-refresh-label">refresh: 10s</span></span>
+        <button class="btn-refresh" id="ram-refresh-btn" title="Refresh">↻</button>
+    </div>
     <div id="ram-panel" style="padding:4px 0">
         <span style="color:var(--muted);font-style:italic">loading…</span>
     </div>
@@ -464,12 +486,8 @@
 <!-- Audio devices panel -->
 <div class="card">
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span>Audio devices <span class="refresh-note">refresh: {{ sndstat_interval }}s</span></span>
-        <button id="sndstat-refresh-btn"
-                onclick="fetchSndstat(this)"
-                style="background:none;border:none;color:var(--muted);cursor:pointer;
-                       font-size:.9rem;padding:0 2px;line-height:1"
-                title="Refresh">↻</button>
+        <span>Audio devices <span class="refresh-note" id="sndstat-refresh-label">refresh: {{ sndstat_interval }}s</span></span>
+        <button class="btn-refresh" id="sndstat-refresh-btn" title="Refresh">↻</button>
     </div>
     <div id="sndstat-panel" style="padding:4px 0">
         <span style="color:var(--muted);font-style:italic">loading…</span>
@@ -493,7 +511,10 @@
 
 <!-- Top CPU processes panel -->
 <div class="card">
-    <div class="card-title" id="topcpu-title">Top CPU <span class="refresh-note">refresh: {{ topcpu_interval }}s</span></div>
+    <div class="card-title title-row">
+        <span id="topcpu-title">Top CPU <span class="refresh-note" id="topcpu-refresh-label">refresh: {{ topcpu_interval }}s</span></span>
+        <button class="btn-refresh" id="topcpu-refresh-btn" title="Refresh">↻</button>
+    </div>
     <div id="topcpu-panel" style="padding:4px 0">
         <span style="color:var(--muted);font-style:italic">loading…</span>
     </div>
@@ -513,6 +534,7 @@ const MONITOR_INTERVAL_MS = {{ monitor_interval }} * 1000;
 const TOPCPU_INTERVAL_MS  = {{ topcpu_interval }} * 1000;
 const SNDSTAT_INTERVAL_MS = {{ sndstat_interval }} * 1000;
 const BRUTEFIR_INTERVAL_MS = {{ brutefir_interval }} * 1000;
+const RAM_INTERVAL_MS = 10000;
 const TOPCPU_THRESHOLD    = {{ topcpu_threshold }};
 
 // ── DRC geometry label ────────────────────────────────────────────────────
@@ -671,6 +693,53 @@ function escHtml(s) {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function setRefreshBusy(btn, busy) {
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.classList.toggle('spinning', busy);
+}
+
+function setRefreshLabel(id, seconds) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = `refresh: ${seconds}s`;
+}
+
+function startAutoRefresh(name, intervalMs, fetchFn) {
+    const seconds = Math.max(1, Math.round(intervalMs / 1000));
+    const btn = document.getElementById(`${name}-refresh-btn`);
+    const labelId = `${name}-refresh-label`;
+    let remaining = seconds;
+    let running = false;
+
+    async function runNow() {
+        if (running) return;
+        running = true;
+        remaining = seconds;
+        setRefreshLabel(labelId, remaining);
+        setRefreshBusy(btn, true);
+        try {
+            await fetchFn(btn);
+        } finally {
+            setRefreshBusy(btn, false);
+            remaining = seconds;
+            setRefreshLabel(labelId, remaining);
+            running = false;
+        }
+    }
+
+    if (btn) btn.onclick = runNow;
+    runNow();
+    setInterval(() => {
+        if (running) return;
+        remaining -= 1;
+        if (remaining <= 0) {
+            runNow();
+        } else {
+            setRefreshLabel(labelId, remaining);
+        }
+    }, 1000);
+}
+
 function fmtColor(line2) {
     const m = line2.match(/(\d+)\s*bit.*?([\d.]+)\s*kHz/i);
     if (!m) return '';
@@ -753,9 +822,6 @@ async function restartQc() {
     }, 2000);
 }
 
-fetchQcStatus();
-setInterval(fetchQcStatus, 1000);
-
 // ── Brutefir CPU panel ─────────────────────────────────────────────────────
 async function fetchBrutefirCpu() {
     const el = document.getElementById('bf-panel');
@@ -789,8 +855,6 @@ async function fetchBrutefirCpu() {
         el.innerHTML = '<span style="color:var(--red)">network error</span>';
     }
 }
-fetchBrutefirCpu();
-setInterval(fetchBrutefirCpu, BRUTEFIR_INTERVAL_MS);
 
 // ── MPD info panel ────────────────────────────────────────────────────────
 function monRow(label, value, valueColor) {
@@ -806,18 +870,39 @@ async function fetchMpdInfo() {
     try {
         const d = await (await fetch('/mpd/info')).json();
         if (!d.ok) { el.innerHTML = `<span style="color:var(--red)">${escHtml(d.error||'error')}</span>`; return; }
-        if (!d.running) { el.innerHTML = '<span style="color:var(--muted);font-style:italic">not running</span>'; return; }
-        el.innerHTML =
+        const verdict = d.rate_status || { kind: 'unknown', text: 'sample-rate comparison unavailable' };
+        const verdictColor = verdict.kind === 'match' ? 'var(--green)' :
+                             verdict.kind === 'mismatch' ? 'var(--red)' : 'var(--muted)';
+        let html =
+            monRow('Daemon', d.running ? 'running' : 'not running', d.running ? 'var(--green)' : 'var(--red)') +
+            monRow('Client', d.client, 'var(--muted)') +
+            monRow('State', d.state || 'unknown',
+                   d.state === 'playing' ? 'var(--green)' :
+                   d.state === 'paused' ? 'var(--yellow)' : 'var(--muted)');
+        if (d.song) html += monRow('Song', d.song);
+        if (d.audio) html += monRow('Audio', d.audio);
+        html +=
+            monRow('MPD rate', d.sample_rate ? d.sample_rate + ' Hz' : 'unknown',
+                   d.sample_rate ? 'var(--text)' : 'var(--muted)') +
+            monRow('Bit depth', d.bit_depth ? d.bit_depth + ' bit' : 'unknown',
+                   d.bit_depth ? 'var(--text)' : 'var(--muted)') +
+            monRow('Channels', d.channels || 'unknown',
+                   d.channels ? 'var(--text)' : 'var(--muted)') +
+            monRow('virtual_oss', d.virtual_oss_rate ? d.virtual_oss_rate + ' Hz' : 'not running',
+                   d.virtual_oss_rate ? 'var(--text)' : 'var(--muted)') +
+            monRow('BruteFIR', d.brutefir_rate ? d.brutefir_rate + ' Hz' : 'not running',
+                   d.brutefir_rate ? 'var(--text)' : 'var(--muted)') +
+            monRow('Rate', verdict.text, verdictColor) +
             monRow('Config', d.conf) +
             monRow('Port',   d.port, 'var(--muted)') +
             monRow('CPU',    d.cpu.toFixed(1) + '%',
                    d.cpu > 10 ? 'var(--yellow)' : 'var(--green)');
+        if (d.mpc_error) html += monRow('Client error', d.mpc_error, 'var(--red)');
+        el.innerHTML = html;
     } catch {
         el.innerHTML = '<span style="color:var(--red)">network error</span>';
     }
 }
-fetchMpdInfo();
-setInterval(fetchMpdInfo, MONITOR_INTERVAL_MS);
 
 // ── DRC status (inside MPD card, on-demand) ───────────────────────────────
 async function fetchDrcStatus(btn) {
@@ -874,8 +959,6 @@ async function fetchSndstat(btn) {
         if (btn_) { btn_.disabled = false; btn_.textContent = '↻'; }
     }
 }
-fetchSndstat();
-setInterval(fetchSndstat, SNDSTAT_INTERVAL_MS);
 
 // ── Advanced diagnostics panel ─────────────────────────────────────────────
 async function fetchAdvancedInfo(btn) {
@@ -932,8 +1015,6 @@ async function fetchTopCpu() {
         el.innerHTML = '<span style="color:var(--red)">network error</span>';
     }
 }
-fetchTopCpu();
-setInterval(fetchTopCpu, TOPCPU_INTERVAL_MS);
 
 // ── RAM panel ─────────────────────────────────────────────────────────────
 function fmtBytes(b) {
@@ -963,8 +1044,12 @@ async function fetchRam() {
         el.innerHTML = '<span style="color:var(--red)">network error</span>';
     }
 }
-fetchRam();
-setInterval(fetchRam, 10000);
+startAutoRefresh('qc', 1000, fetchQcStatus);
+startAutoRefresh('bf', BRUTEFIR_INTERVAL_MS, fetchBrutefirCpu);
+startAutoRefresh('mpd', MONITOR_INTERVAL_MS, fetchMpdInfo);
+startAutoRefresh('sndstat', SNDSTAT_INTERVAL_MS, fetchSndstat);
+startAutoRefresh('topcpu', TOPCPU_INTERVAL_MS, fetchTopCpu);
+startAutoRefresh('ram', RAM_INTERVAL_MS, fetchRam);
 </script>
 </body>
 </html>

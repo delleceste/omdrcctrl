@@ -582,6 +582,10 @@ sysctl hw.usb.uaudio
 In addition to the configurable command cards, fixed monitoring panels always
 appear at the bottom of the page.
 
+Auto-refreshing panels show a client-side countdown such as `refresh: 5s`.
+The circular arrow button in each panel header refreshes that panel immediately
+and resets the countdown.
+
 ### Qobuz Connect
 
 Shows the track currently playing via qobuzconnect2mpd, updated every second:
@@ -596,6 +600,14 @@ Two buttons in the panel header:
   open) with colour-coded lines: red for `[ERR]`, green for `[OUT]`
 
 File paths are configured via the `[qconnect]` section in `commands.conf`.
+
+### MPD
+
+Shows MPD daemon state, the portable client used (`musicpc` on FreeBSD, `mpc`
+on Linux), playback state, audio sample rate, bit depth, `virtual_oss` rate,
+and BruteFIR rate. The panel displays **SAMPLE RATE MATCH** in green when MPD,
+`virtual_oss`, and BruteFIR all use the same sample rate; otherwise it displays
+**RESAMPLING** in red.
 
 ### Brutefir CPU
 
