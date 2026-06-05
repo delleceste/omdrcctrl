@@ -834,14 +834,14 @@ async function fetchSndstat(btn) {
             el.innerHTML = `<span style="color:var(--red)">${escHtml(d.error||'error')}</span>`;
             return;
         }
-        let html = '<div style="font-family:ui-monospace,monospace;font-size:.72rem;line-height:1.55">';
+        let html = '<div style="font-family:ui-monospace,monospace;font-size:.72rem;line-height:1.55;overflow-x:auto">';
         for (const line of d.lines) {
             // Highlight decoded fmt labels.
             const safe = escHtml(line).replace(
                 /(\bfmt:\s+)([A-Z0-9_|]+)/,
                 '$1<span style="color:var(--accent)">$2</span>'
             );
-            html += `<div style="white-space:pre;overflow:hidden;text-overflow:ellipsis" title="${escHtml(line)}">${safe}</div>`;
+            html += `<div style="white-space:pre">${safe}</div>`;
         }
         html += '</div>';
         el.innerHTML = html;
