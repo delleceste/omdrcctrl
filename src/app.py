@@ -291,12 +291,26 @@ def _mpd_port_from_conf(conf_path: str) -> str | None:
     return None
 
 
+def _control_title() -> str:
+    try:
+        r = subprocess.run(
+            ["uname", "-sr"], capture_output=True, text=True, timeout=3,
+        )
+        label = r.stdout.strip()
+        if r.returncode == 0 and label:
+            return f"{label} Control"
+    except Exception:
+        pass
+    return "System Control"
+
+
 # ── page routes ───────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
     return render_template(
         "index.html",
+        control_title=_control_title(),
         groups=_groups(),
         topcpu_threshold=TOPCPU_THRESHOLD,
         monitor_interval=MONITOR_INTERVAL,
