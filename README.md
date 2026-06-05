@@ -556,10 +556,31 @@ sum. Uses a BSD/Linux-compatible `ps` parser and filters command names matching
 
 ---
 
+### `GET /system/advanced`
+
+FreeBSD-only diagnostic endpoint. Returns the outputs of:
+
+```sh
+sysctl dev.pcm.0
+sysctl hw.usb.uaudio
+```
+
+```json
+{
+  "ok": true,
+  "sections": [
+    { "title": "sysctl dev.pcm.0", "ok": true, "output": "..." },
+    { "title": "sysctl hw.usb.uaudio", "ok": true, "output": "..." }
+  ]
+}
+```
+
+---
+
 ## Built-in monitoring panels
 
-In addition to the configurable command cards, two fixed panels always appear
-at the bottom of the page.
+In addition to the configurable command cards, fixed monitoring panels always
+appear at the bottom of the page.
 
 ### Qobuz Connect
 
@@ -589,6 +610,11 @@ spawns four worker processes) a highlighted **Total** line is appended. Displays
 Shows `/dev/sndstat` on FreeBSD and decodes `fmt 0x...` bitfields to
 `AFMT_*` / `PCM_CAP_*` labels. Refreshed every `sndstat_interval` seconds from
 the `[monitor]` section of `commands.conf`.
+
+### Advanced
+
+FreeBSD-only diagnostic panel that gathers `sysctl dev.pcm.0` and
+`sysctl hw.usb.uaudio`. It is refreshed manually with the panel button.
 
 ### Top CPU
 

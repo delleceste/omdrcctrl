@@ -476,6 +476,21 @@
     </div>
 </div>
 
+<!-- Advanced diagnostics panel -->
+<div class="card">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Advanced <span class="refresh-note">manual</span></span>
+        <button id="advanced-refresh-btn"
+                onclick="fetchAdvancedInfo(this)"
+                style="background:none;border:none;color:var(--muted);cursor:pointer;
+                       font-size:.9rem;padding:0 2px;line-height:1"
+                title="Refresh">↻</button>
+    </div>
+    <div id="advanced-panel" style="padding:4px 0">
+        <span style="color:var(--muted);font-style:italic">loading…</span>
+    </div>
+</div>
+
 <!-- Top CPU processes panel -->
 <div class="card">
     <div class="card-title" id="topcpu-title">Top CPU <span class="refresh-note">refresh: {{ topcpu_interval }}s</span></div>
@@ -861,6 +876,33 @@ async function fetchSndstat(btn) {
 }
 fetchSndstat();
 setInterval(fetchSndstat, SNDSTAT_INTERVAL_MS);
+
+// ── Advanced diagnostics panel ─────────────────────────────────────────────
+async function fetchAdvancedInfo(btn) {
+    const el   = document.getElementById('advanced-panel');
+    const btn_ = btn || document.getElementById('advanced-refresh-btn');
+    if (btn_) { btn_.disabled = true; btn_.textContent = '…'; }
+    try {
+        const d = await (await fetch('/system/advanced')).json();
+        if (!d.ok) {
+            el.innerHTML = `<span style="color:var(--red)">${escHtml(d.error||'error')}</span>`;
+            return;
+        }
+        let html = '<div style="font-family:ui-monospace,monospace;font-size:.72rem;line-height:1.55;overflow-x:auto">';
+        for (const section of d.sections) {
+            const color = section.ok ? 'var(--accent)' : 'var(--red)';
+            html += `<div style="color:${color};font-weight:600;margin:8px 0 3px">${escHtml(section.title)}</div>`;
+            html += `<pre style="margin:0 0 8px;white-space:pre;color:var(--muted)">${escHtml(section.output || '')}</pre>`;
+        }
+        html += '</div>';
+        el.innerHTML = html;
+    } catch {
+        el.innerHTML = '<span style="color:var(--red)">error</span>';
+    } finally {
+        if (btn_) { btn_.disabled = false; btn_.textContent = '↻'; }
+    }
+}
+fetchAdvancedInfo();
 
 // ── Top CPU processes panel ───────────────────────────────────────────────
 async function fetchTopCpu() {

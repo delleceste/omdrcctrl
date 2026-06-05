@@ -618,6 +618,34 @@ def system_sndstat():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route("/system/advanced")
+def system_advanced():
+    if platform.system() != "FreeBSD":
+        return jsonify({"ok": False, "error": "FreeBSD only"})
+
+    sections = []
+    for cmd in (["sysctl", "dev.pcm.0"], ["sysctl", "hw.usb.uaudio"]):
+        try:
+            r = subprocess.run(
+                cmd,
+                capture_output=True, text=True, timeout=5, env=_env(),
+            )
+            output = (r.stdout + r.stderr).strip()
+            sections.append({
+                "title": " ".join(cmd),
+                "ok": r.returncode == 0,
+                "output": output or f"exit {r.returncode}",
+            })
+        except subprocess.TimeoutExpired:
+            sections.append({
+                "title": " ".join(cmd),
+                "ok": False,
+                "output": "timeout",
+            })
+
+    return jsonify({"ok": True, "sections": sections})
+
+
 @app.route("/system/memory")
 def system_memory():
     return jsonify(_read_memory())
