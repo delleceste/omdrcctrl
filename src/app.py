@@ -183,6 +183,15 @@ def _process_name(command: str) -> str:
     return os.path.basename(parts[0]) if parts else ""
 
 
+def _hide_from_topcpu(row: dict) -> bool:
+    name = _process_name(row["name"]).lower()
+    if row["pid"] == "0":
+        return True
+    if name in {"idle", "kernel", "ps"}:
+        return True
+    return name.startswith("[") and name.endswith("]")
+
+
 def _ps_processes() -> list[dict]:
     candidates = [
         ["ps", "axo", "user,pid,pcpu,comm"],
@@ -675,7 +684,7 @@ def system_topcpu():
     try:
         procs = []
         for row in _ps_processes():
-            if _process_name(row["name"]) == "ps":
+            if _hide_from_topcpu(row):
                 continue
             if row["cpu"] >= TOPCPU_THRESHOLD:
                 procs.append(row)
