@@ -504,6 +504,32 @@ def system_topcpu():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route("/drc/status")
+def drc_status_api():
+    # Derive drc.sh path from any drc WRITE command (e.g. drc_off)
+    drc_cmd = CMD_MAP.get("drc_off")
+    if not drc_cmd:
+        return jsonify({"ok": False, "error": "drc not configured"})
+    script = drc_cmd["cmd"].split()[0]
+    try:
+        r = subprocess.run(
+            [script, "status"],
+            capture_output=True, text=True, timeout=10, env=_env(),
+        )
+        rows = []
+        for line in r.stdout.splitlines():
+            line = line.strip()
+            if not line or ':' not in line:
+                continue
+            k, _, v = line.partition(':')
+            rows.append({"key": k.strip(), "value": v.strip()})
+        return jsonify({"ok": True, "rows": rows})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "timeout"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/drc/geometry")
 def drc_geometry():
     cmd = CMD_MAP.get("drc_status")

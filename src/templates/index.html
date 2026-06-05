@@ -388,6 +388,7 @@
     <div id="mpd-panel" style="padding:4px 0">
         <span style="color:var(--muted);font-style:italic">loading…</span>
     </div>
+    <div id="drc-status-panel"></div>
 </div>
 
 <!-- Command groups (all except system) -->
@@ -731,6 +732,31 @@ async function fetchMpdInfo() {
 }
 fetchMpdInfo();
 setInterval(fetchMpdInfo, MONITOR_INTERVAL_MS);
+
+// ── DRC status (inside MPD card) ──────────────────────────────────────────
+async function fetchDrcStatus() {
+    const el = document.getElementById('drc-status-panel');
+    try {
+        const d = await (await fetch('/drc/status')).json();
+        if (!d.ok || !d.rows.length) { el.innerHTML = ''; return; }
+        let html = '<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px">';
+        for (const row of d.rows) {
+            let color;
+            const v = row.value;
+            if (row.key === 'Rate')
+                color = v.includes('[match]') ? 'var(--green)' : v.includes('[MISMATCH]') ? 'var(--red)' : undefined;
+            else if (v.startsWith('not running'))
+                color = 'var(--muted)';
+            html += monRow(row.key, v, color);
+        }
+        html += '</div>';
+        el.innerHTML = html;
+    } catch {
+        el.innerHTML = '';
+    }
+}
+fetchDrcStatus();
+setInterval(fetchDrcStatus, MONITOR_INTERVAL_MS);
 
 // ── Top CPU processes panel ───────────────────────────────────────────────
 async function fetchTopCpu() {
