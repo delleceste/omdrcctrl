@@ -441,6 +441,14 @@ def _rate_status(mpd_rate: int | None, virtual_rate: int | None, brutefir_rate: 
     return {"kind": "mismatch", "text": "RESAMPLING"}
 
 
+def _format_read_output(cmd_id: str, output: str) -> str:
+    if cmd_id == "drc_status" and output:
+        parts = output.split()
+        if parts and parts[-1].lower() == "off":
+            return "Off"
+    return output
+
+
 def _control_title() -> str:
     try:
         r = subprocess.run(
@@ -616,6 +624,8 @@ def read_command(cmd_id):
         )
         ok     = result.returncode == 0
         output = (result.stdout + result.stderr).strip()
+        if ok:
+            output = _format_read_output(cmd_id, output)
         resp   = {"ok": ok, "output": output or (None if ok else f"exit {result.returncode}")}
         if ok and output and "details_root" in cmd and _find_dyn_details(cmd, output):
             resp["details_url"] = f"/details-dyn/{cmd_id}/{output}"
