@@ -90,10 +90,13 @@ def _groups() -> list[tuple]:
 def _env() -> dict:
     e = dict(os.environ)
     e.setdefault("DISPLAY", ":0")
-    # FreeBSD services may not have /usr/local/bin in PATH (brutefir, mpc, …)
-    path = e.get("PATH", "")
-    if "/usr/local/bin" not in path.split(":"):
-        e["PATH"] = "/usr/local/bin:" + path
+    # FreeBSD rc.d services start with a minimal PATH that omits /usr/local/{s,}bin
+    # where brutefir, mpc, virtual_oss, pgrep, … live.
+    path_dirs = e.get("PATH", "").split(":")
+    for d in ("/usr/local/sbin", "/usr/local/bin"):
+        if d not in path_dirs:
+            path_dirs.insert(0, d)
+    e["PATH"] = ":".join(path_dirs)
     return e
 
 
@@ -363,37 +366,47 @@ def qconnect_log():
 @app.route("/mpd/info")
 def mpd_info():
     try:
-        # BSD-style 'ax' (no dash): 'a'=all users, 'x'=include processes
-        # without a controlling terminal (daemons). On FreeBSD, POSIX -A/-a
-        # skips daemons unless combined with POSIX -x, but POSIX -x means
-        # "convert args to paths" there — so 'ax' is the only safe form.
-        r = subprocess.run(
-            ["ps", "ax", "-o", "pcpu=,comm=,args="],
-            capture_output=True, text=True, timeout=5,
-        )
+        # pgrep -x is reliable on both Linux and FreeBSD; avoids ps flag
+        # incompatibilities. musicpd is the FreeBSD port binary name.
+        pid = None
+        for name in ("musicpd", "mpd"):
+            r = subprocess.run(["pgrep", "-x", name],
+                               capture_output=True, text=True, timeout=3)
+            if r.returncode == 0:
+                pids = r.stdout.strip().split()
+                if pids:
+                    pid = pids[0]
+                    break
+
+        running = pid is not None
         cpu_total = 0.0
         conf = None
-        running = False
-        for line in r.stdout.splitlines():
-            parts = line.split(None, 2)   # pcpu, comm, args
-            if len(parts) < 2 or parts[1].strip() not in ("mpd", "musicpd"):
-                continue
-            running = True
-            try:
-                cpu_total += float(parts[0])
-            except ValueError:
-                pass
-            if conf is None and len(parts) > 2:
-                conf = _mpd_conf_from_cmdline(parts[2].strip())
 
-        # Fallback: probe common default config paths
+        if running:
+            r2 = subprocess.run(["ps", "-p", pid, "-o", "pcpu=,args="],
+                                capture_output=True, text=True, timeout=3)
+            for line in r2.stdout.splitlines():
+                parts = line.split(None, 1)
+                if not parts:
+                    continue
+                try:
+                    cpu_total += float(parts[0])
+                except ValueError:
+                    pass
+                if conf is None and len(parts) > 1:
+                    conf = _mpd_conf_from_cmdline(parts[1].strip())
+
+        # Fallback: probe common default config paths (Linux and FreeBSD)
         if not conf:
-            for p in ("/etc/mpd.conf",
+            for p in ("/usr/local/etc/musicpd.conf",
+                      "/usr/local/etc/mpd.conf",
+                      "/etc/mpd.conf",
                       os.path.expanduser("~/.config/mpd/mpd.conf"),
                       os.path.expanduser("~/.mpdconf")):
                 if os.path.isfile(p):
                     conf = p
                     break
+
         port = _mpd_port_from_conf(conf) if conf else None
         return jsonify({
             "ok":      True,
