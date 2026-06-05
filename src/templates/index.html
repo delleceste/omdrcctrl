@@ -433,6 +433,21 @@
     </div>
 </div>
 
+<!-- Audio devices panel -->
+<div class="card">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Audio devices</span>
+        <button id="sndstat-refresh-btn"
+                onclick="fetchSndstat(this)"
+                style="background:none;border:none;color:var(--muted);cursor:pointer;
+                       font-size:.9rem;padding:0 2px;line-height:1"
+                title="Refresh">↻</button>
+    </div>
+    <div id="sndstat-panel" style="padding:4px 0">
+        <span style="color:var(--muted);font-style:italic">loading…</span>
+    </div>
+</div>
+
 <!-- Top CPU processes panel -->
 <div class="card">
     <div class="card-title" id="topcpu-title">Top CPU</div>
@@ -768,6 +783,36 @@ async function fetchDrcStatus(btn) {
     }
 }
 fetchDrcStatus();
+
+// ── Audio devices panel ───────────────────────────────────────────────────
+async function fetchSndstat(btn) {
+    const el   = document.getElementById('sndstat-panel');
+    const btn_ = btn || document.getElementById('sndstat-refresh-btn');
+    if (btn_) { btn_.disabled = true; btn_.textContent = '…'; }
+    try {
+        const d = await (await fetch('/system/sndstat')).json();
+        if (!d.ok) {
+            el.innerHTML = `<span style="color:var(--red)">${escHtml(d.error||'error')}</span>`;
+            return;
+        }
+        let html = '<div style="font-family:ui-monospace,monospace;font-size:.72rem;line-height:1.55">';
+        for (const line of d.lines) {
+            // Highlight the decoded [fmt] annotation
+            const safe = escHtml(line).replace(
+                /(\[([^\]]+)\])$/,
+                '<span style="color:var(--accent)">[$2]</span>'
+            );
+            html += `<div style="white-space:pre;overflow:hidden;text-overflow:ellipsis" title="${escHtml(line)}">${safe}</div>`;
+        }
+        html += '</div>';
+        el.innerHTML = html;
+    } catch {
+        el.innerHTML = '<span style="color:var(--red)">error</span>';
+    } finally {
+        if (btn_) { btn_.disabled = false; btn_.textContent = '↻'; }
+    }
+}
+fetchSndstat();
 
 // ── Top CPU processes panel ───────────────────────────────────────────────
 async function fetchTopCpu() {

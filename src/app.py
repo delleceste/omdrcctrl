@@ -11,6 +11,31 @@ from flask import Flask, render_template, jsonify, send_from_directory
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+# ── FreeBSD /dev/sndstat fmt bitmask (sys/soundcard.h) ───────────────────────
+_AFMT_BITS: list[tuple[int, str]] = [
+    (0x00000008, "U8"),
+    (0x00000010, "S16_LE"),
+    (0x00000020, "S16_BE"),
+    (0x00000040, "S8"),
+    (0x00001000, "S32_LE"),
+    (0x00002000, "S32_BE"),
+    (0x00004000, "U32_LE"),
+    (0x00100000, "CAP_ANALOGOUT"),
+    (0x00200000, "CAP_ANALOGIN"),
+    (0x00400000, "CAP_DIGITALOUT"),
+    (0x00800000, "CAP_DIGITALIN"),
+]
+
+def _decode_afmt(val: int) -> str:
+    names, rest = [], val
+    for bit, name in _AFMT_BITS:
+        if val & bit:
+            names.append(name)
+            rest &= ~bit
+    if rest:
+        names.append(hex(rest))
+    return " | ".join(names) if names else hex(val)
+
 app = Flask(__name__, template_folder=os.path.join(_HERE, "templates"))
 
 # Paths to qconnect2mpd output files.
@@ -454,6 +479,31 @@ def _read_memory() -> dict:
         return {"ok": True, "total": total, "used": used, "free": free, "available": available}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.route("/system/sndstat")
+def system_sndstat():
+    try:
+        sys = platform.system()
+        if sys == "FreeBSD":
+            with open("/dev/sndstat", errors="replace") as f:
+                raw = f.read()
+            lines = []
+            for line in raw.splitlines():
+                m = re.search(r'\bfmt\s+(0x[0-9a-fA-F]+)', line)
+                if m:
+                    decoded = _decode_afmt(int(m.group(1), 16))
+                    line = line + f"   [{decoded}]"
+                lines.append(line)
+            return jsonify({"ok": True, "lines": lines})
+        elif sys == "Linux":
+            r = subprocess.run(["aplay", "-l"],
+                               capture_output=True, text=True, timeout=5)
+            return jsonify({"ok": True, "lines": r.stdout.splitlines()})
+        else:
+            return jsonify({"ok": False, "error": f"unsupported platform: {sys}"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 
 @app.route("/system/memory")
