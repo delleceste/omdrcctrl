@@ -16,17 +16,17 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ── FreeBSD /dev/sndstat fmt bitmask (sys/soundcard.h) ───────────────────────
 _AFMT_BITS: list[tuple[int, str]] = [
-    (0x00000008, "U8"),
-    (0x00000010, "S16_LE"),
-    (0x00000020, "S16_BE"),
-    (0x00000040, "S8"),
-    (0x00001000, "S32_LE"),
-    (0x00002000, "S32_BE"),
-    (0x00004000, "U32_LE"),
-    (0x00100000, "CAP_ANALOGOUT"),
-    (0x00200000, "CAP_ANALOGIN"),
-    (0x00400000, "CAP_DIGITALOUT"),
-    (0x00800000, "CAP_DIGITALIN"),
+    (0x00100000, "PCM_CAP_ANALOGOUT"),
+    (0x00200000, "PCM_CAP_ANALOGIN"),
+    (0x00400000, "PCM_CAP_DIGITALOUT"),
+    (0x00800000, "PCM_CAP_DIGITALIN"),
+    (0x00000008, "AFMT_U8"),
+    (0x00000010, "AFMT_S16_LE"),
+    (0x00000020, "AFMT_S16_BE"),
+    (0x00000040, "AFMT_S8"),
+    (0x00001000, "AFMT_S32_LE"),
+    (0x00002000, "AFMT_S32_BE"),
+    (0x00004000, "AFMT_U32_LE"),
 ]
 
 def _decode_afmt(val: int) -> str:
@@ -37,7 +37,15 @@ def _decode_afmt(val: int) -> str:
             rest &= ~bit
     if rest:
         names.append(hex(rest))
-    return " | ".join(names) if names else hex(val)
+    return "|".join(names) if names else hex(val)
+
+
+def _decode_sndstat_fmt(line: str) -> str:
+    def repl(match: re.Match) -> str:
+        raw = match.group(1)
+        return f"fmt: {_decode_afmt(int(raw, 16))}"
+
+    return re.sub(r'\bfmt\s+(0x[0-9a-fA-F]+)', repl, line)
 
 app = Flask(__name__, template_folder=os.path.join(_HERE, "templates"))
 
@@ -50,6 +58,8 @@ QCONNECT_LOG_FILE    = os.environ.get("QCONNECT_LOG_FILE",    "/tmp/qconnect2mpd
 TOPCPU_THRESHOLD = 4.0   # minimum %CPU to include in the top-processes list
 MONITOR_INTERVAL = 5     # seconds between MPD refreshes
 TOPCPU_INTERVAL = 3      # seconds between top-CPU refreshes
+SNDSTAT_INTERVAL = 5     # seconds between audio-device refreshes
+BRUTEFIR_INTERVAL = 5    # seconds between brutefir CPU refreshes
 _TOPCPU_CACHE: dict | None = None
 _TOPCPU_CACHE_AT = 0.0
 
@@ -67,6 +77,7 @@ CMD_MAP:  dict[str, dict] = {}
 def load_config(path: str) -> None:
     global COMMANDS, CMD_MAP, QCONNECT_STATUS_FILE, QCONNECT_LOG_FILE
     global TOPCPU_THRESHOLD, MONITOR_INTERVAL, TOPCPU_INTERVAL
+    global SNDSTAT_INTERVAL, BRUTEFIR_INTERVAL
     cfg = configparser.ConfigParser()
     if not cfg.read(path):
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -81,6 +92,8 @@ def load_config(path: str) -> None:
         TOPCPU_THRESHOLD = cfg.getfloat("monitor", "topcpu_threshold", fallback=TOPCPU_THRESHOLD)
         MONITOR_INTERVAL = max(1, cfg.getint("monitor", "monitor_interval", fallback=MONITOR_INTERVAL))
         TOPCPU_INTERVAL = max(1, cfg.getint("monitor", "topcpu_interval", fallback=TOPCPU_INTERVAL))
+        SNDSTAT_INTERVAL = max(1, cfg.getint("monitor", "sndstat_interval", fallback=SNDSTAT_INTERVAL))
+        BRUTEFIR_INTERVAL = max(1, cfg.getint("monitor", "brutefir_interval", fallback=BRUTEFIR_INTERVAL))
 
     _RESERVED = {"qconnect", "monitor"}
     COMMANDS = []
@@ -160,6 +173,47 @@ def _process_running(process: str) -> bool:
         return r.returncode == 0
     except Exception:
         return False
+
+
+def _process_name(command: str) -> str:
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        parts = command.split()
+    return os.path.basename(parts[0]) if parts else ""
+
+
+def _ps_processes() -> list[dict]:
+    candidates = [
+        ["ps", "axo", "user,pid,pcpu,comm"],
+        ["ps", "ax", "-o", "user", "-o", "pid", "-o", "pcpu", "-o", "comm"],
+        ["ps", "ax", "-o", "user=,pid=,pcpu=,comm="],
+    ]
+    errors = []
+    for cmd in candidates:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if r.returncode != 0:
+            errors.append((r.stderr or r.stdout).strip())
+            continue
+        rows = []
+        for line in r.stdout.splitlines():
+            parts = line.split(None, 3)
+            if len(parts) < 4:
+                continue
+            if parts[1].upper() == "PID" or parts[2].upper() in ("%CPU", "PCPU"):
+                continue
+            try:
+                rows.append({
+                    "user": parts[0],
+                    "pid": parts[1],
+                    "cpu": float(parts[2]),
+                    "name": parts[3].strip(),
+                })
+            except ValueError:
+                continue
+        if rows:
+            return rows
+    raise RuntimeError("; ".join(e for e in errors if e) or "could not parse ps output")
 
 
 def _tail_file(path: str, limit: int = 4000) -> str:
@@ -247,6 +301,8 @@ def index():
         topcpu_threshold=TOPCPU_THRESHOLD,
         monitor_interval=MONITOR_INTERVAL,
         topcpu_interval=TOPCPU_INTERVAL,
+        sndstat_interval=SNDSTAT_INTERVAL,
+        brutefir_interval=BRUTEFIR_INTERVAL,
     )
 
 
@@ -550,11 +606,7 @@ def system_sndstat():
                 raw = f.read()
             lines = []
             for line in raw.splitlines():
-                m = re.search(r'\bfmt\s+(0x[0-9a-fA-F]+)', line)
-                if m:
-                    decoded = _decode_afmt(int(m.group(1), 16))
-                    line = line + f"   [{decoded}]"
-                lines.append(line)
+                lines.append(_decode_sndstat_fmt(line))
             return jsonify({"ok": True, "lines": lines})
         elif sys == "Linux":
             r = subprocess.run(["aplay", "-l"],
@@ -579,26 +631,12 @@ def system_topcpu():
         return jsonify(_TOPCPU_CACHE)
 
     try:
-        # BSD-style 'ax': includes processes without a controlling terminal
-        # on both Linux and FreeBSD. See mpd_info for the full explanation.
-        r = subprocess.run(
-            ["ps", "ax", "-o", "user=,pid=,pcpu=,comm="],
-            capture_output=True, text=True, timeout=5,
-        )
         procs = []
-        for line in r.stdout.splitlines():
-            parts = line.split(None, 3)
-            if len(parts) < 4:
+        for row in _ps_processes():
+            if _process_name(row["name"]) == "ps":
                 continue
-            try:
-                cpu = float(parts[2])
-            except ValueError:
-                continue
-            name = parts[3].strip()
-            if name == "ps":
-                continue
-            if cpu >= TOPCPU_THRESHOLD:
-                procs.append({"user": parts[0], "pid": parts[1], "cpu": cpu, "name": name})
+            if row["cpu"] >= TOPCPU_THRESHOLD:
+                procs.append(row)
         procs.sort(key=lambda p: p["cpu"], reverse=True)
         _TOPCPU_CACHE = {
             "ok": True,
@@ -665,23 +703,13 @@ def drc_geometry():
 @app.route("/brutefir/cpu")
 def brutefir_cpu():
     try:
-        # BSD-style 'ax': see mpd_info for explanation.
-        r = subprocess.run(
-            ["ps", "ax", "-o", "pid=,pcpu=,comm="],
-            capture_output=True, text=True, timeout=5,
-        )
         procs = []
         total = 0.0
-        for line in r.stdout.splitlines():
-            parts = line.split(None, 2)
-            if len(parts) < 3 or parts[2].strip() != "brutefir":
+        for row in _ps_processes():
+            if _process_name(row["name"]) != "brutefir":
                 continue
-            try:
-                cpu = float(parts[1])
-                procs.append({"pid": parts[0], "cpu": cpu})
-                total += cpu
-            except ValueError:
-                pass
+            procs.append({"pid": row["pid"], "cpu": row["cpu"]})
+            total += row["cpu"]
         return jsonify({"ok": True, "procs": procs, "total": round(total, 1)})
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "timeout"})

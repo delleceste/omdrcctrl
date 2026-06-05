@@ -488,7 +488,8 @@
 <script>
 const MONITOR_INTERVAL_MS = {{ monitor_interval }} * 1000;
 const TOPCPU_INTERVAL_MS  = {{ topcpu_interval }} * 1000;
-const TOPCPU_POLL_MS      = 1000;
+const SNDSTAT_INTERVAL_MS = {{ sndstat_interval }} * 1000;
+const BRUTEFIR_INTERVAL_MS = {{ brutefir_interval }} * 1000;
 const TOPCPU_THRESHOLD    = {{ topcpu_threshold }};
 
 // ── DRC geometry label ────────────────────────────────────────────────────
@@ -766,7 +767,7 @@ async function fetchBrutefirCpu() {
     }
 }
 fetchBrutefirCpu();
-setInterval(fetchBrutefirCpu, 5000);
+setInterval(fetchBrutefirCpu, BRUTEFIR_INTERVAL_MS);
 
 // ── MPD info panel ────────────────────────────────────────────────────────
 function monRow(label, value, valueColor) {
@@ -835,10 +836,10 @@ async function fetchSndstat(btn) {
         }
         let html = '<div style="font-family:ui-monospace,monospace;font-size:.72rem;line-height:1.55">';
         for (const line of d.lines) {
-            // Highlight the decoded [fmt] annotation
+            // Highlight decoded fmt labels.
             const safe = escHtml(line).replace(
-                /(\[([^\]]+)\])$/,
-                '<span style="color:var(--accent)">[$2]</span>'
+                /(\bfmt:\s+)([A-Z0-9_|]+)/,
+                '$1<span style="color:var(--accent)">$2</span>'
             );
             html += `<div style="white-space:pre;overflow:hidden;text-overflow:ellipsis" title="${escHtml(line)}">${safe}</div>`;
         }
@@ -851,6 +852,7 @@ async function fetchSndstat(btn) {
     }
 }
 fetchSndstat();
+setInterval(fetchSndstat, SNDSTAT_INTERVAL_MS);
 
 // ── Top CPU processes panel ───────────────────────────────────────────────
 async function fetchTopCpu() {
@@ -881,7 +883,7 @@ async function fetchTopCpu() {
     }
 }
 fetchTopCpu();
-setInterval(fetchTopCpu, Math.min(TOPCPU_POLL_MS, TOPCPU_INTERVAL_MS));
+setInterval(fetchTopCpu, TOPCPU_INTERVAL_MS);
 
 // ── RAM panel ─────────────────────────────────────────────────────────────
 function fmtBytes(b) {

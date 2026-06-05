@@ -538,7 +538,8 @@ specific; on FreeBSD, use regular command widgets for service actions.
 ### `GET /brutefir/cpu`
 
 Returns per-process CPU usage for all running `brutefir` instances, plus the
-sum. Uses `ps -C brutefir -o pid,pcpu`.
+sum. Uses a BSD/Linux-compatible `ps` parser and filters command names matching
+`brutefir`.
 
 ```json
 {
@@ -578,9 +579,16 @@ File paths are configured via the `[qconnect]` section in `commands.conf`.
 ### Brutefir CPU
 
 Shows per-process CPU usage for every running `brutefir` process, refreshed
-every 5 seconds. When more than one process is detected (brutefir typically
-spawns four worker processes) a highlighted **Total** line is appended.
-Displays "not running" when brutefir is not active.
+every `brutefir_interval` seconds from the `[monitor]` section of
+`commands.conf`. When more than one process is detected (brutefir typically
+spawns four worker processes) a highlighted **Total** line is appended. Displays
+"not running" when brutefir is not active.
+
+### Audio Devices
+
+Shows `/dev/sndstat` on FreeBSD and decodes `fmt 0x...` bitfields to
+`AFMT_*` / `PCM_CAP_*` labels. Refreshed every `sndstat_interval` seconds from
+the `[monitor]` section of `commands.conf`.
 
 ### Top CPU
 
