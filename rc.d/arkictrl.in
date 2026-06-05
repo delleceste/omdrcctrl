@@ -18,9 +18,11 @@ load_rc_config "$name"
 command="/usr/sbin/daemon"
 
 if [ "$(id -u)" -eq 0 ]; then
-	# Started as root: write the pidfile to /var/run and drop privileges
-	# to ${arkictrl_user} (daemon -u requires superuser).
-	: ${arkictrl_pidfile:="/var/run/${name}.pid"}
+	# Started as root: daemon(8) drops to ${arkictrl_user} before writing
+	# the -p pidfile, so the pidfile must live in a directory that user can
+	# write. /var/run is root-only, so use a per-service subdirectory that
+	# start_precmd creates and chowns to ${arkictrl_user}.
+	: ${arkictrl_pidfile:="/var/run/${name}/${name}.pid"}
 	pidfile="${arkictrl_pidfile}"
 	command_args="-f -p ${pidfile} -u ${arkictrl_user} @CMAKE_INSTALL_PREFIX@/bin/arkictrl"
 else
@@ -31,5 +33,19 @@ else
 	pidfile="${arkictrl_pidfile}"
 	command_args="-f -p ${pidfile} @CMAKE_INSTALL_PREFIX@/bin/arkictrl"
 fi
+
+start_precmd="arkictrl_precmd"
+
+arkictrl_precmd()
+{
+	# Ensure the pidfile directory exists and is writable by the user the
+	# daemon will run as (it writes the pidfile after dropping privileges).
+	piddir="${pidfile%/*}"
+	if [ "$(id -u)" -eq 0 ]; then
+		/usr/bin/install -d -o "${arkictrl_user}" -m 0755 "${piddir}"
+	else
+		/usr/bin/install -d -m 0755 "${piddir}"
+	fi
+}
 
 run_rc_command "$1"

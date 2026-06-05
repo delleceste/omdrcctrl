@@ -192,13 +192,20 @@ configured. The following rc.conf variables can be overridden with `sysrc`:
 | --- | --- | --- |
 | `arkictrl_user` | `ARKICTRL_SERVICE_USER` (set at CMake time) | User the daemon runs as. Only applied when the service is started as root, since `daemon -u` requires superuser. |
 | `arkictrl_env` | `DISPLAY=:0` | Environment passed to the daemon, e.g. for X11 access. |
-| `arkictrl_pidfile` | `/var/run/arkictrl.pid` (root) or `${TMPDIR:-/tmp}/arkictrl-<user>.pid` (unprivileged) | Location of the pidfile. |
+| `arkictrl_pidfile` | `/var/run/arkictrl/arkictrl.pid` (root) or `${TMPDIR:-/tmp}/arkictrl-<user>.pid` (unprivileged) | Location of the pidfile. See note below. |
 
 ```bash
 sudo sysrc arkictrl_user=myuser
 sudo sysrc arkictrl_env='DISPLAY=:0'
-sudo sysrc arkictrl_pidfile=/var/run/arkictrl.pid
+sudo sysrc arkictrl_pidfile=/var/run/arkictrl/arkictrl.pid
 ```
+
+> **Why the pidfile lives in a subdirectory:** `daemon(8)` drops to
+> `arkictrl_user` *before* writing the `-p` pidfile, so the pidfile's directory
+> must be writable by that user. `/var/run` itself is root-only, which is why a
+> plain `/var/run/arkictrl.pid` fails with *permission denied* even under
+> `sudo`. The script's `start_precmd` creates `/var/run/arkictrl` owned by
+> `arkictrl_user` so the unprivileged daemon can write the pidfile there.
 
 #### Running without root
 
