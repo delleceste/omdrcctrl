@@ -452,10 +452,12 @@ def system_topcpu():
         return jsonify(_TOPCPU_CACHE)
 
     try:
-        # -ax -o …= works on both Linux and FreeBSD; sort in Python since
-        # --sort and -e are Linux-only ps flags.
+        # -A (POSIX) selects all processes on both Linux and FreeBSD.
+        # -ax would work on Linux but on FreeBSD POSIX -x means "convert
+        # args to paths", not "include processes without a terminal", so
+        # daemon processes like brutefir would be silently skipped.
         r = subprocess.run(
-            ["ps", "-ax", "-o", "user=,pid=,pcpu=,comm="],
+            ["ps", "-A", "-o", "user=,pid=,pcpu=,comm="],
             capture_output=True, text=True, timeout=5,
         )
         procs = []
@@ -490,10 +492,10 @@ def system_topcpu():
 @app.route("/brutefir/cpu")
 def brutefir_cpu():
     try:
-        # pid=,pcpu=,comm= suppresses headers on both Linux and FreeBSD;
-        # filter by comm instead of the Linux-only -C flag.
+        # -A (POSIX) selects all processes; see system_topcpu for why
+        # -ax is avoided on FreeBSD.
         r = subprocess.run(
-            ["ps", "-ax", "-o", "pid=,pcpu=,comm="],
+            ["ps", "-A", "-o", "pid=,pcpu=,comm="],
             capture_output=True, text=True, timeout=5,
         )
         procs = []
