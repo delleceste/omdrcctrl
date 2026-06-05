@@ -204,6 +204,24 @@
         #toast.ok    { border-color: var(--green); color: var(--green); }
         #toast.error { border-color: var(--red);   color: var(--red);   }
 
+        #write-status {
+            display: none;
+            border: 1px solid var(--red);
+            border-radius: 8px;
+            background: rgba(248,81,73,.08);
+            color: var(--red);
+            padding: 10px 12px;
+            margin-bottom: 16px;
+            font-family: ui-monospace, "SFMono-Regular", monospace;
+            font-size: .75rem;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+        #write-status.show { display: block; }
+
         /* ── Qobuz Connect panel ─────────────────────────────── */
         .qc-card-title {
             display: flex;
@@ -306,6 +324,8 @@
     <h1>Arki Control</h1>
     <div id="srv-dot"></div>
 </header>
+
+<div id="write-status"></div>
 
 {% macro render_group(group_name, group_label, cmds) %}
 <div class="card">
@@ -490,6 +510,17 @@ function toast(msg, type = 'ok', ms = 2800) {
     _tt = setTimeout(() => { el.className = 'toast'; }, ms);
 }
 
+function writeStatus(msg) {
+    const el = document.getElementById('write-status');
+    if (!msg) {
+        el.classList.remove('show');
+        el.textContent = '';
+        return;
+    }
+    el.textContent = msg;
+    el.classList.add('show');
+}
+
 // ── WRITE ──────────────────────────────────────────────────────────────────
 function handleWrite(id) {
     const btn = document.getElementById('btn-' + id);
@@ -506,19 +537,26 @@ async function runWrite(id) {
     btn.disabled   = true;
     btn.textContent = '…';
 
-    let ok = false, errMsg = '';
+    let ok = false, errMsg = '', output = '';
     try {
         const r = await fetch('/run/' + id, { method: 'POST' });
         const d = await r.json();
         ok     = d.ok;
         errMsg = d.error || '';
+        output = d.output || errMsg;
     } catch {
         errMsg = 'Network error';
+        output = errMsg;
     }
 
     btn.classList.toggle('ok',    ok);
     btn.classList.toggle('error', !ok);
-    if (!ok && errMsg) toast(errMsg, 'error');
+    if (ok) {
+        writeStatus('');
+    } else {
+        writeStatus(output || errMsg || 'command failed');
+        toast('command failed', 'error');
+    }
 
     setTimeout(() => {
         btn.classList.remove('ok', 'error');

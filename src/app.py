@@ -169,6 +169,20 @@ def _tail_file(path: str, limit: int = 4000) -> str:
         return ""
 
 
+def _command_failure_output(cmd: dict, log_path: str) -> str:
+    parts = []
+    out = _tail_file(log_path)
+    if out:
+        parts.append(out)
+
+    if "drc.sh" in cmd.get("cmd", ""):
+        brutefir_out = _tail_file("/tmp/brutefir.out")
+        if brutefir_out:
+            parts.append("--- /tmp/brutefir.out ---\n" + brutefir_out)
+
+    return "\n".join(parts).strip()
+
+
 def _unlink_quietly(path: str) -> None:
     try:
         os.unlink(path)
@@ -347,9 +361,13 @@ def run_command(cmd_id):
     try:
         rc = proc.wait(timeout=5)
         if rc != 0:
-            err = _tail_file(log_path)
+            err = _command_failure_output(cmd, log_path)
             _unlink_quietly(log_path)
-            return jsonify({"ok": False, "error": err or f"exit code {rc}"})
+            return jsonify({
+                "ok": False,
+                "error": err or f"exit code {rc}",
+                "output": err,
+            })
         _unlink_quietly(log_path)
         return jsonify({"ok": True})
     except subprocess.TimeoutExpired:
