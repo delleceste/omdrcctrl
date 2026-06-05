@@ -363,22 +363,26 @@ def qconnect_log():
 @app.route("/mpd/info")
 def mpd_info():
     try:
+        # -A -o: portable across Linux and FreeBSD (see system_topcpu comment).
+        # args= gives the full command line; comm= is the basename used to filter.
         r = subprocess.run(
-            ["ps", "-C", "mpd", "-o", "pcpu,args", "--no-header"],
+            ["ps", "-A", "-o", "pcpu=,comm=,args="],
             capture_output=True, text=True, timeout=5,
         )
         cpu_total = 0.0
         conf = None
+        running = False
         for line in r.stdout.splitlines():
-            parts = line.split(None, 1)
-            if not parts:
+            parts = line.split(None, 2)   # pcpu, comm, args
+            if len(parts) < 2 or parts[1].strip() != "mpd":
                 continue
+            running = True
             try:
                 cpu_total += float(parts[0])
             except ValueError:
                 pass
-            if conf is None and len(parts) > 1:
-                conf = _mpd_conf_from_cmdline(parts[1].strip())
+            if conf is None and len(parts) > 2:
+                conf = _mpd_conf_from_cmdline(parts[2].strip())
 
         # Fallback: probe common default config paths
         if not conf:
@@ -388,8 +392,6 @@ def mpd_info():
                 if os.path.isfile(p):
                     conf = p
                     break
-
-        running = bool(r.stdout.strip())
         port = _mpd_port_from_conf(conf) if conf else None
         return jsonify({
             "ok":      True,
