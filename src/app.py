@@ -7,6 +7,7 @@ import subprocess
 import configparser
 import threading
 import time
+import tempfile
 import markdown as md_lib
 from flask import Flask, render_template, jsonify, send_from_directory
 
@@ -155,6 +156,29 @@ def _process_running(process: str) -> bool:
         return r.returncode == 0
     except Exception:
         return False
+
+
+def _tail_file(path: str, limit: int = 4000) -> str:
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - limit), os.SEEK_SET)
+            return f.read().decode(errors="replace").strip()
+    except OSError:
+        return ""
+
+
+def _unlink_quietly(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _wait_and_cleanup(proc: subprocess.Popen, path: str) -> None:
+    proc.wait()
+    _unlink_quietly(path)
 
 
 # ── MPD helpers ───────────────────────────────────────────────────────────────
@@ -306,21 +330,32 @@ def run_command(cmd_id):
     if cmd["type"] != "WRITE":
         return jsonify({"ok": False, "error": "Not a WRITE command"}), 400
 
+    log = tempfile.NamedTemporaryFile(
+        mode="w+b",
+        prefix=f"arkictrl-{cmd_id}-",
+        suffix=".log",
+        delete=False,
+    )
+    log_path = log.name
     proc = subprocess.Popen(
         cmd["cmd"], shell=True, env=_env(),
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+        stdout=log, stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    log.close()
     try:
         rc = proc.wait(timeout=5)
         if rc != 0:
-            err = proc.stderr.read().decode(errors="replace").strip()
+            err = _tail_file(log_path)
+            _unlink_quietly(log_path)
             return jsonify({"ok": False, "error": err or f"exit code {rc}"})
+        _unlink_quietly(log_path)
         return jsonify({"ok": True})
     except subprocess.TimeoutExpired:
-        # Drain stderr in the background so the script doesn't get SIGPIPE
-        # when it writes to stderr after we've returned the response.
-        threading.Thread(target=proc.stderr.read, daemon=True).start()
+        # Keep waiting in the background so the child is reaped, but leave its
+        # stdio detached from the HTTP request.
+        threading.Thread(target=_wait_and_cleanup, args=(proc, log_path), daemon=True).start()
         return jsonify({"ok": True})  # still running → launched successfully
 
 
