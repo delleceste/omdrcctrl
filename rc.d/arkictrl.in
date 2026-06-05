@@ -13,53 +13,47 @@ load_rc_config "$name"
 
 : ${arkictrl_enable:="NO"}
 : ${arkictrl_user:="@ARKICTRL_SERVICE_USER@"}
-: ${arkictrl_env:="DISPLAY=:0"}
-
-# rc runs with a minimal PATH that omits /usr/local/{s,}bin, where python3
-# and the tools app.py shells out to (pgrep, kdeconnect-cli, ...) live. Make
-# them reachable, and apply arkictrl_env (e.g. DISPLAY) to the daemon's
-# environment, which is inherited by the spawned process.
-export PATH="/usr/local/sbin:/usr/local/bin:${PATH}"
-for _kv in ${arkictrl_env}; do
-	export "${_kv}"
-done
+# ${name}_env is applied by rc.subr via env(1). rc runs with a minimal PATH
+# that omits /usr/local/{s,}bin, where python3 and the tools app.py shells out
+# to (pgrep, kdeconnect-cli, ...) live, so set it explicitly. DISPLAY lets the
+# app reach the local X session.
+: ${arkictrl_env:="PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin DISPLAY=:0"}
 
 command="/usr/sbin/daemon"
 
 if [ "$(id -u)" -eq 0 ]; then
-	# Started as root: daemon(8) drops to ${arkictrl_user} before writing
-	# the -p pidfile and -o logfile, so both must live in a directory that
-	# user can write. /var/run is root-only, so use a per-service
-	# subdirectory that start_precmd creates and chowns to ${arkictrl_user}.
+	# Started as root: rc.subr drops privileges to ${arkictrl_user} (the
+	# special ${name}_user variable) via su(1). Do NOT also pass daemon -u:
+	# using both runs setusercontext() a second time as the already-dropped
+	# user and fails with "daemon: failed to set user environment".
 	: ${arkictrl_pidfile:="/var/run/${name}/${name}.pid"}
 	: ${arkictrl_logfile:="/var/run/${name}/${name}.log"}
-	pidfile="${arkictrl_pidfile}"
-	command_args="-f -o ${arkictrl_logfile} -p ${pidfile} -u ${arkictrl_user} @CMAKE_INSTALL_PREFIX@/bin/arkictrl"
 else
-	# Started as an unprivileged user (e.g. service arkictrl onestart):
-	# /var/run is not writable and daemon -u needs root, so keep the
-	# pidfile/logfile in a user-writable location and run as the current user.
+	# Started as an unprivileged user (e.g. service arkictrl onestart): there
+	# is nothing to drop to, so clear ${name}_user (otherwise rc.subr would
+	# su to it and prompt for a password) and use writable paths.
+	unset arkictrl_user
 	: ${arkictrl_pidfile:="${TMPDIR:-/tmp}/${name}-$(id -un).pid"}
 	: ${arkictrl_logfile:="${TMPDIR:-/tmp}/${name}-$(id -un).log"}
-	pidfile="${arkictrl_pidfile}"
-	command_args="-f -o ${arkictrl_logfile} -p ${pidfile} @CMAKE_INSTALL_PREFIX@/bin/arkictrl"
 fi
+
+pidfile="${arkictrl_pidfile}"
+command_args="-f -o ${arkictrl_logfile} -p ${pidfile} @CMAKE_INSTALL_PREFIX@/bin/arkictrl"
 
 start_precmd="arkictrl_precmd"
 
 arkictrl_precmd()
 {
-	# Ensure the pidfile/logfile directories exist and are writable by the
-	# user the daemon will run as (it writes them after dropping privileges).
-	if [ "$(id -u)" -eq 0 ]; then
-		for d in "${arkictrl_pidfile%/*}" "${arkictrl_logfile%/*}"; do
+	# Ensure the pidfile/logfile directory exists and is writable by the user
+	# the daemon runs as (it writes them after rc.subr drops privileges).
+	# This runs as root, before the su(1) switch.
+	for d in "${arkictrl_pidfile%/*}" "${arkictrl_logfile%/*}"; do
+		if [ -n "${arkictrl_user}" ]; then
 			/usr/bin/install -d -o "${arkictrl_user}" -m 0755 "${d}"
-		done
-	else
-		for d in "${arkictrl_pidfile%/*}" "${arkictrl_logfile%/*}"; do
+		else
 			/usr/bin/install -d -m 0755 "${d}"
-		done
-	fi
+		fi
+	done
 }
 
 run_rc_command "$1"

@@ -190,30 +190,38 @@ configured. The following rc.conf variables can be overridden with `sysrc`:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `arkictrl_user` | `ARKICTRL_SERVICE_USER` (set at CMake time) | User the daemon runs as. Only applied when the service is started as root, since `daemon -u` requires superuser. |
-| `arkictrl_env` | `DISPLAY=:0` | Environment passed to the daemon, e.g. for X11 access. |
+| `arkictrl_user` | `ARKICTRL_SERVICE_USER` (set at CMake time) | User the daemon runs as. rc.subr drops privileges to this user via `su(1)` when started as root. |
+| `arkictrl_env` | `PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin DISPLAY=:0` | Environment applied via `env(1)`. Includes `/usr/local/{s,}bin` on `PATH` (rc starts with a minimal `PATH`) and `DISPLAY` for X11 access. |
 | `arkictrl_pidfile` | `/var/run/arkictrl/arkictrl.pid` (root) or `${TMPDIR:-/tmp}/arkictrl-<user>.pid` (unprivileged) | Location of the pidfile. See note below. |
 | `arkictrl_logfile` | `/var/run/arkictrl/arkictrl.log` (root) or `${TMPDIR:-/tmp}/arkictrl-<user>.log` (unprivileged) | Captures the app's stdout/stderr (`daemon -o`); check here if the service starts but no process runs. |
 
 ```bash
 sudo sysrc arkictrl_user=myuser
-sudo sysrc arkictrl_env='DISPLAY=:0'
+sudo sysrc arkictrl_env='PATH=/usr/local/bin:/usr/bin:/bin DISPLAY=:0'
 sudo sysrc arkictrl_pidfile=/var/run/arkictrl/arkictrl.pid
 ```
 
-> **Why the pidfile lives in a subdirectory:** `daemon(8)` drops to
-> `arkictrl_user` *before* writing the `-p` pidfile, so the pidfile's directory
-> must be writable by that user. `/var/run` itself is root-only, which is why a
-> plain `/var/run/arkictrl.pid` fails with *permission denied* even under
-> `sudo`. The script's `start_precmd` creates `/var/run/arkictrl` owned by
-> `arkictrl_user` so the unprivileged daemon can write the pidfile there.
+> **Privilege dropping:** `arkictrl_user` and `arkictrl_env` are the standard
+> rc.subr `${name}_user` / `${name}_env` variables — rc.subr drops privileges
+> with `su(1)` and applies the environment with `env(1)`. The script does **not**
+> pass `daemon -u`; combining `${name}_user` with `daemon -u` runs
+> `setusercontext()` a second time as the already-dropped user and fails with
+> *"daemon: failed to set user environment"*.
+
+> **Why the pidfile lives in a subdirectory:** the daemon writes its `-p`
+> pidfile (and `-o` logfile) *after* rc.subr drops to `arkictrl_user`, so their
+> directory must be writable by that user. `/var/run` itself is root-only, which
+> is why a plain `/var/run/arkictrl.pid` fails with *permission denied* even
+> under `sudo`. The script's `start_precmd` (which runs as root) creates
+> `/var/run/arkictrl` owned by `arkictrl_user` so the unprivileged daemon can
+> write there.
 
 #### Running without root
 
-`/var/run` is only writable by root and `daemon -u` needs superuser, so when the
-service is started by an unprivileged user the script automatically drops `-u`
-and defaults the pidfile to `${TMPDIR:-/tmp}/arkictrl-<user>.pid`. Use
-`onestart` to bypass the `arkictrl_enable` rcvar check:
+When started by an unprivileged user the script clears `arkictrl_user` (so
+rc.subr does not try to `su` and prompt for a password) and defaults the
+pidfile/logfile to `${TMPDIR:-/tmp}/arkictrl-<user>.*`. Use `onestart` to bypass
+the `arkictrl_enable` rcvar check:
 
 ```bash
 /usr/local/etc/rc.d/arkictrl onestart
