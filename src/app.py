@@ -374,7 +374,7 @@ def mpd_info():
         running = False
         for line in r.stdout.splitlines():
             parts = line.split(None, 2)   # pcpu, comm, args
-            if len(parts) < 2 or parts[1].strip() != "mpd":
+            if len(parts) < 2 or parts[1].strip() not in ("mpd", "musicpd"):
                 continue
             running = True
             try:
