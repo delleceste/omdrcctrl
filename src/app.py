@@ -444,8 +444,12 @@ def _rate_status(mpd_rate: int | None, virtual_rate: int | None, brutefir_rate: 
 def _format_read_output(cmd_id: str, output: str) -> str:
     if cmd_id == "drc_status" and output:
         parts = output.split()
-        if parts and parts[-1].lower() == "off":
+        if not parts:
+            return output
+        if parts[-1].lower() == "off":
             return "Off"
+        if len(parts) > 1:
+            return " ".join(parts[1:])
     return output
 
 
