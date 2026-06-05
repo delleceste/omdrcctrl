@@ -186,11 +186,29 @@ sudo service arkictrl status
 ```
 
 The service user defaults to `ARKICTRL_SERVICE_USER`, which is set when CMake is
-configured. You can override it through rc.conf:
+configured. The following rc.conf variables can be overridden with `sysrc`:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `arkictrl_user` | `ARKICTRL_SERVICE_USER` (set at CMake time) | User the daemon runs as. Only applied when the service is started as root, since `daemon -u` requires superuser. |
+| `arkictrl_env` | `DISPLAY=:0` | Environment passed to the daemon, e.g. for X11 access. |
+| `arkictrl_pidfile` | `/var/run/arkictrl.pid` (root) or `${TMPDIR:-/tmp}/arkictrl-<user>.pid` (unprivileged) | Location of the pidfile. |
 
 ```bash
 sudo sysrc arkictrl_user=myuser
 sudo sysrc arkictrl_env='DISPLAY=:0'
+sudo sysrc arkictrl_pidfile=/var/run/arkictrl.pid
+```
+
+#### Running without root
+
+`/var/run` is only writable by root and `daemon -u` needs superuser, so when the
+service is started by an unprivileged user the script automatically drops `-u`
+and defaults the pidfile to `${TMPDIR:-/tmp}/arkictrl-<user>.pid`. Use
+`onestart` to bypass the `arkictrl_enable` rcvar check:
+
+```bash
+/usr/local/etc/rc.d/arkictrl onestart
 ```
 
 Restart after config changes:
