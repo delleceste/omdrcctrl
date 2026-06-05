@@ -413,6 +413,14 @@
     </div>
 </div>
 
+<!-- RAM panel -->
+<div class="card">
+    <div class="card-title">RAM</div>
+    <div id="ram-panel" style="padding:4px 0">
+        <span style="color:var(--muted);font-style:italic">loading…</span>
+    </div>
+</div>
+
 <!-- Top CPU processes panel -->
 <div class="card">
     <div class="card-title" id="topcpu-title">Top CPU</div>
@@ -743,6 +751,37 @@ async function fetchTopCpu() {
 }
 fetchTopCpu();
 setInterval(fetchTopCpu, Math.min(TOPCPU_POLL_MS, TOPCPU_INTERVAL_MS));
+
+// ── RAM panel ─────────────────────────────────────────────────────────────
+function fmtBytes(b) {
+    if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+    return (b / 1048576).toFixed(0) + ' MB';
+}
+
+async function fetchRam() {
+    const el = document.getElementById('ram-panel');
+    try {
+        const d = await (await fetch('/system/memory')).json();
+        if (!d.ok) {
+            el.innerHTML = `<span style="color:var(--red)">${escHtml(d.error || 'error')}</span>`;
+            return;
+        }
+        const pct   = Math.round(d.used / d.total * 100);
+        const color = pct >= 85 ? 'var(--red)' : pct >= 60 ? 'var(--yellow)' : 'var(--green)';
+        el.innerHTML =
+            `<div style="background:var(--border);border-radius:4px;height:6px;margin-bottom:8px">` +
+            `<div style="width:${pct}%;height:6px;border-radius:4px;background:${color};transition:width .4s"></div>` +
+            `</div>` +
+            monRow('Total',     fmtBytes(d.total)) +
+            monRow('Used',      `${fmtBytes(d.used)} (${pct}%)`,     color) +
+            monRow('Available', fmtBytes(d.available), 'var(--green)') +
+            monRow('Free',      fmtBytes(d.free),      'var(--muted)');
+    } catch {
+        el.innerHTML = '<span style="color:var(--red)">network error</span>';
+    }
+}
+fetchRam();
+setInterval(fetchRam, 10000);
 </script>
 </body>
 </html>

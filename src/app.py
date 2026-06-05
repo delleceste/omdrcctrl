@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import platform
 import re
 import shlex
 import subprocess
@@ -89,6 +90,10 @@ def _groups() -> list[tuple]:
 def _env() -> dict:
     e = dict(os.environ)
     e.setdefault("DISPLAY", ":0")
+    # FreeBSD services may not have /usr/local/bin in PATH (brutefir, mpc, …)
+    path = e.get("PATH", "")
+    if "/usr/local/bin" not in path.split(":"):
+        e["PATH"] = "/usr/local/bin:" + path
     return e
 
 
@@ -399,6 +404,46 @@ def mpd_info():
         return jsonify({"ok": False, "error": str(e)})
 
 
+def _read_memory() -> dict:
+    try:
+        system = platform.system()
+        if system == "Linux":
+            info: dict[str, int] = {}
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    k, v = line.split(":", 1)
+                    info[k.strip()] = int(v.strip().split()[0]) * 1024
+            total     = info["MemTotal"]
+            available = info["MemAvailable"]
+            free      = info["MemFree"]
+        elif system == "FreeBSD":
+            r = subprocess.run(
+                ["sysctl", "-n",
+                 "hw.physmem",
+                 "vm.stats.vm.v_page_size",
+                 "vm.stats.vm.v_free_count",
+                 "vm.stats.vm.v_inactive_count",
+                 "vm.stats.vm.v_cache_count"],
+                capture_output=True, text=True, timeout=5,
+            )
+            vals = [int(x) for x in r.stdout.split()]
+            physmem, psize, v_free, v_inactive, v_cache = vals
+            total     = physmem
+            free      = v_free * psize
+            available = (v_free + v_inactive + v_cache) * psize
+        else:
+            return {"ok": False, "error": f"unsupported platform: {system}"}
+        used = total - available
+        return {"ok": True, "total": total, "used": used, "free": free, "available": available}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.route("/system/memory")
+def system_memory():
+    return jsonify(_read_memory())
+
+
 @app.route("/system/topcpu")
 def system_topcpu():
     global _TOPCPU_CACHE, _TOPCPU_CACHE_AT
@@ -407,8 +452,10 @@ def system_topcpu():
         return jsonify(_TOPCPU_CACHE)
 
     try:
+        # -ax -o …= works on both Linux and FreeBSD; sort in Python since
+        # --sort and -e are Linux-only ps flags.
         r = subprocess.run(
-            ["ps", "-eo", "user,pid,pcpu,comm", "--sort=-%cpu", "--no-header"],
+            ["ps", "-ax", "-o", "user=,pid=,pcpu=,comm="],
             capture_output=True, text=True, timeout=5,
         )
         procs = []
@@ -420,11 +467,12 @@ def system_topcpu():
                 cpu = float(parts[2])
             except ValueError:
                 continue
-            if parts[3] == "ps":
+            name = parts[3].strip()
+            if name == "ps":
                 continue
-            if cpu < TOPCPU_THRESHOLD:
-                break   # list is sorted descending
-            procs.append({"user": parts[0], "pid": parts[1], "cpu": cpu, "name": parts[3]})
+            if cpu >= TOPCPU_THRESHOLD:
+                procs.append({"user": parts[0], "pid": parts[1], "cpu": cpu, "name": name})
+        procs.sort(key=lambda p: p["cpu"], reverse=True)
         _TOPCPU_CACHE = {
             "ok": True,
             "procs": procs,
@@ -442,21 +490,24 @@ def system_topcpu():
 @app.route("/brutefir/cpu")
 def brutefir_cpu():
     try:
+        # pid=,pcpu=,comm= suppresses headers on both Linux and FreeBSD;
+        # filter by comm instead of the Linux-only -C flag.
         r = subprocess.run(
-            ["ps", "-C", "brutefir", "-o", "pid,pcpu", "--no-header"],
+            ["ps", "-ax", "-o", "pid=,pcpu=,comm="],
             capture_output=True, text=True, timeout=5,
         )
         procs = []
         total = 0.0
         for line in r.stdout.splitlines():
-            parts = line.split()
-            if len(parts) == 2:
-                try:
-                    cpu = float(parts[1])
-                    procs.append({"pid": parts[0], "cpu": cpu})
-                    total += cpu
-                except ValueError:
-                    pass
+            parts = line.split(None, 2)
+            if len(parts) < 3 or parts[2].strip() != "brutefir":
+                continue
+            try:
+                cpu = float(parts[1])
+                procs.append({"pid": parts[0], "cpu": cpu})
+                total += cpu
+            except ValueError:
+                pass
         return jsonify({"ok": True, "procs": procs, "total": round(total, 1)})
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "timeout"})
