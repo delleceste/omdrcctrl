@@ -388,7 +388,16 @@
     <div id="mpd-panel" style="padding:4px 0">
         <span style="color:var(--muted);font-style:italic">loading…</span>
     </div>
-    <div id="drc-status-panel"></div>
+    <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:4px;
+                display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:.75rem;color:var(--muted)">DRC status</span>
+        <button id="drc-refresh-btn"
+                onclick="fetchDrcStatus(this)"
+                style="background:none;border:none;color:var(--muted);cursor:pointer;
+                       font-size:.9rem;padding:0 2px;line-height:1"
+                title="Refresh DRC status">↻</button>
+    </div>
+    <div id="drc-status-rows"></div>
 </div>
 
 <!-- Command groups (all except system) -->
@@ -733,13 +742,15 @@ async function fetchMpdInfo() {
 fetchMpdInfo();
 setInterval(fetchMpdInfo, MONITOR_INTERVAL_MS);
 
-// ── DRC status (inside MPD card) ──────────────────────────────────────────
-async function fetchDrcStatus() {
-    const el = document.getElementById('drc-status-panel');
+// ── DRC status (inside MPD card, on-demand) ───────────────────────────────
+async function fetchDrcStatus(btn) {
+    const el  = document.getElementById('drc-status-rows');
+    const btn_ = btn || document.getElementById('drc-refresh-btn');
+    if (btn_) { btn_.disabled = true; btn_.textContent = '…'; }
     try {
         const d = await (await fetch('/drc/status')).json();
         if (!d.ok || !d.rows.length) { el.innerHTML = ''; return; }
-        let html = '<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px">';
+        let html = '';
         for (const row of d.rows) {
             let color;
             const v = row.value;
@@ -749,14 +760,14 @@ async function fetchDrcStatus() {
                 color = 'var(--muted)';
             html += monRow(row.key, v, color);
         }
-        html += '</div>';
         el.innerHTML = html;
     } catch {
-        el.innerHTML = '';
+        el.innerHTML = '<span style="color:var(--red)">error</span>';
+    } finally {
+        if (btn_) { btn_.disabled = false; btn_.textContent = '↻'; }
     }
 }
 fetchDrcStatus();
-setInterval(fetchDrcStatus, MONITOR_INTERVAL_MS);
 
 // ── Top CPU processes panel ───────────────────────────────────────────────
 async function fetchTopCpu() {
