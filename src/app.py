@@ -489,6 +489,25 @@ def system_topcpu():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route("/drc/geometry")
+def drc_geometry():
+    cmd = CMD_MAP.get("drc_status")
+    if not cmd:
+        return jsonify({"ok": False, "error": "drc_status not configured"})
+    try:
+        r = subprocess.run(
+            cmd["cmd"] + " --geometry",
+            shell=True, env=_env(),
+            capture_output=True, text=True, timeout=5,
+        )
+        geo = r.stdout.strip()
+        if r.returncode == 0 and geo:
+            return jsonify({"ok": True, "geometry": geo})
+        return jsonify({"ok": False, "error": r.stderr.strip() or "empty"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/brutefir/cpu")
 def brutefir_cpu():
     try:

@@ -309,7 +309,9 @@
 
 {% macro render_group(group_name, group_label, cmds) %}
 <div class="card">
-    <div class="card-title">{{ group_label }}</div>
+    <div class="card-title"{% if group_name == 'drc' %} style="display:flex;justify-content:space-between;align-items:baseline"{% endif %}>
+        <span>{{ group_label }}</span>{% if group_name == 'drc' %}<span id="drc-geometry-label" style="font-size:.75rem;font-weight:400;color:var(--muted)"></span>{% endif %}
+    </div>
 
     {% for cmd in cmds %}
     <div class="row">
@@ -443,6 +445,15 @@ const MONITOR_INTERVAL_MS = {{ monitor_interval }} * 1000;
 const TOPCPU_INTERVAL_MS  = {{ topcpu_interval }} * 1000;
 const TOPCPU_POLL_MS      = 1000;
 const TOPCPU_THRESHOLD    = {{ topcpu_threshold }};
+
+// ── DRC geometry label ────────────────────────────────────────────────────
+(async () => {
+    try {
+        const d = await (await fetch('/drc/geometry')).json();
+        const el = document.getElementById('drc-geometry-label');
+        if (el && d.ok && d.geometry) el.textContent = d.geometry;
+    } catch {}
+})();
 
 // ── toast ──────────────────────────────────────────────────────────────────
 let _tt = null;
