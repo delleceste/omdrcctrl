@@ -5,6 +5,7 @@ import re
 import shlex
 import subprocess
 import configparser
+import threading
 import time
 import markdown as md_lib
 from flask import Flask, render_template, jsonify, send_from_directory
@@ -317,7 +318,9 @@ def run_command(cmd_id):
             return jsonify({"ok": False, "error": err or f"exit code {rc}"})
         return jsonify({"ok": True})
     except subprocess.TimeoutExpired:
-        proc.stderr.close()
+        # Drain stderr in the background so the script doesn't get SIGPIPE
+        # when it writes to stderr after we've returned the response.
+        threading.Thread(target=proc.stderr.read, daemon=True).start()
         return jsonify({"ok": True})  # still running → launched successfully
 
 
