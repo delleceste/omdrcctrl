@@ -506,11 +506,14 @@ def system_topcpu():
 
 @app.route("/drc/status")
 def drc_status_api():
-    # Derive drc.sh path from any drc WRITE command (e.g. drc_off)
-    drc_cmd = CMD_MAP.get("drc_off")
-    if not drc_cmd:
-        return jsonify({"ok": False, "error": "drc not configured"})
-    script = drc_cmd["cmd"].split()[0]
+    # drc.sh lives alongside drc-status.sh; derive its path from the
+    # already-configured drc_status command rather than a WRITE command.
+    drc_status_cmd = CMD_MAP.get("drc_status")
+    if not drc_status_cmd:
+        return jsonify({"ok": False, "error": "drc_status not configured"})
+    script = os.path.join(
+        os.path.dirname(drc_status_cmd["cmd"].strip()), "drc.sh"
+    )
     try:
         r = subprocess.run(
             [script, "status"],
