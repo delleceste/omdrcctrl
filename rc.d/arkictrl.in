@@ -38,7 +38,7 @@ else
 fi
 
 pidfile="${arkictrl_pidfile}"
-command_args="-f -o ${arkictrl_logfile} -p ${pidfile} @CMAKE_INSTALL_PREFIX@/bin/arkictrl"
+command_args="-f -o ${arkictrl_logfile} -P ${pidfile} @CMAKE_INSTALL_PREFIX@/bin/arkictrl"
 
 start_precmd="arkictrl_precmd"
 
