@@ -654,7 +654,7 @@ def _fir_response(filename: str, fmt: str, rate: int,
         bulk_delay = float(np.argmax(np.abs(ir)) / rate)
 
     compensated = spec * np.exp(1j * omega * bulk_delay)
-    phase = np.unwrap(np.angle(compensated))
+    phase = np.angle(compensated)
     gd_ms = (gd - bulk_delay) * 1000.0
 
     lo = max(1, int(np.searchsorted(freqs, fmin)))
