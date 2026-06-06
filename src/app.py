@@ -343,6 +343,31 @@ def _parse_mpc_audio(audio: str) -> dict:
     return parsed
 
 
+def _mpd_audio_via_protocol(port: str | None) -> str:
+    """Query MPD directly for the audio field.
+
+    Modern mpc (0.35+) dropped the 'audio:' line from its default status
+    output on Linux.  The MPD protocol always includes it when playing.
+    """
+    import socket
+    try:
+        p = int(port) if port else 6600
+        with socket.create_connection(("localhost", p), timeout=3) as sock:
+            with sock.makefile("r", encoding="utf-8", errors="replace") as f:
+                if not f.readline().startswith("OK"):
+                    return ""
+                sock.sendall(b"status\n")
+                for line in f:
+                    line = line.rstrip("\n")
+                    if line == "OK" or line.startswith("ACK"):
+                        break
+                    if line.lower().startswith("audio:"):
+                        return line.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _mpc_status(port: str | None = None) -> dict:
     cmd = _mpc_client()
     if not cmd:
@@ -383,6 +408,12 @@ def _mpc_status(port: str | None = None) -> dict:
             info["audio"] = audio.strip()
             info.update(_parse_mpc_audio(info["audio"]))
             break
+
+    if not info["audio"] and info["state"] in ("playing", "paused"):
+        audio = _mpd_audio_via_protocol(port)
+        if audio:
+            info["audio"] = audio
+            info.update(_parse_mpc_audio(audio))
 
     return info
 
