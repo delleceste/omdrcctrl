@@ -454,20 +454,48 @@ def _virtual_oss_rate() -> int | None:
     return None
 
 
-def _alsa_rate() -> int | None:
-    """Rate of the first non-idle ALSA playback stream (Linux only)."""
+def _alsa_hw_params() -> dict | None:
+    """hw_params of the first active ALSA playback stream (Linux only).
+
+    Reflects exactly what the DAC is being fed right now: format (bit depth),
+    rate, channels, and the period/buffer sizes.  Returns None when no stream
+    is open.
+    """
     for path in sorted(glob.glob("/proc/asound/card*/pcm*p/sub*/hw_params")):
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
-                if f.readline().strip() == "closed":
-                    continue
-                for line in f:
-                    m = re.match(r'^rate:\s+(\d+)', line)
-                    if m:
-                        return int(m.group(1))
+                content = f.read()
         except OSError:
             continue
+        if content.strip() in ("", "closed"):
+            continue
+        fields: dict[str, str] = {}
+        for line in content.splitlines():
+            if ":" in line:
+                k, _, v = line.partition(":")
+                fields[k.strip()] = v.strip()
+        rate = None
+        m = re.match(r'(\d+)', fields.get("rate", ""))
+        if m:
+            rate = int(m.group(1))
+        # card/device id from the path: /proc/asound/card0/pcm0p/sub0/hw_params
+        cm = re.search(r'card(\d+)/pcm(\d+)', path)
+        return {
+            "card": int(cm.group(1)) if cm else None,
+            "device": int(cm.group(2)) if cm else None,
+            "format": fields.get("format"),
+            "rate": rate,
+            "channels": int(fields["channels"]) if fields.get("channels", "").isdigit() else None,
+            "period_size": int(fields["period_size"]) if fields.get("period_size", "").isdigit() else None,
+            "buffer_size": int(fields["buffer_size"]) if fields.get("buffer_size", "").isdigit() else None,
+        }
     return None
+
+
+def _alsa_rate() -> int | None:
+    """Rate of the first active ALSA playback stream (Linux only)."""
+    hw = _alsa_hw_params()
+    return hw["rate"] if hw else None
 
 
 def _brutefir_rate() -> int | None:
@@ -487,6 +515,136 @@ def _rate_status(mpd_rate: int | None, virtual_rate: int | None, brutefir_rate: 
     if all(mpd_rate == r for r in rates):
         return {"kind": "match", "text": "SAMPLE RATE MATCH"}
     return {"kind": "mismatch", "text": "RESAMPLING"}
+
+
+def _path_status(rate_status: dict, brutefir_running: bool) -> dict:
+    """Plain-language verdict on the audio path, for the bit-perfect hint.
+
+    Honest framing: only the DRC-off + rates-matched case is truly
+    bit-transparent.  With DRC engaged the signal is intentionally modified,
+    but still at native rate in 64-bit float with no resampling stage.
+    """
+    kind = rate_status.get("kind")
+    if kind == "mismatch":
+        return {
+            "kind": "mismatch",
+            "text": "Resampling active",
+            "detail": "Sample-rate conversion is in the chain — the stream is not bit-transparent.",
+        }
+    if kind == "match":
+        if brutefir_running:
+            return {
+                "kind": "drc",
+                "text": "Full-resolution DRC · no resampling",
+                "detail": "BruteFIR applies room correction at the native rate in 64-bit float. "
+                          "No sample-rate conversion and no lossy stage between MPD and the DAC.",
+            }
+        return {
+            "kind": "match",
+            "text": "Bit-perfect passthrough",
+            "detail": "DRC is off and every stage runs at the same rate — samples reach the DAC unaltered.",
+        }
+    return {"kind": "unknown", "text": "Path status unavailable", "detail": ""}
+
+
+# ── BruteFIR filter (FIR coefficient) inspection ───────────────────────────────
+
+# numpy dtype for each BruteFIR coeff `format:` string.
+_RAW_DTYPES: dict[str, str] = {
+    "FLOAT64_LE": "<f8", "FLOAT64_BE": ">f8",
+    "FLOAT_LE":   "<f4", "FLOAT_BE":   ">f4",
+    "FLOAT32_LE": "<f4", "FLOAT32_BE": ">f4",
+    "S32_LE": "<i4", "S32_BE": ">i4",
+    "S16_LE": "<i2", "S16_BE": ">i2",
+}
+
+
+def _active_brutefir_conf() -> str | None:
+    """Absolute path of the .conf the running BruteFIR was started with."""
+    for line in _ps_arg_lines():
+        if "brutefir" not in line:
+            continue
+        try:
+            parts = shlex.split(line)
+        except ValueError:
+            parts = line.split()
+        for p in parts:
+            if p.endswith(".conf") and "brutefir" in os.path.basename(p):
+                return p
+    return None
+
+
+def _parse_brutefir_conf(path: str) -> dict:
+    """Extract sampling_rate and coeff (filename/format/attenuation) blocks."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    m = re.search(r'sampling_rate:\s*(\d+)', text)
+    rate = int(m.group(1)) if m else None
+    coeffs = []
+    for cm in re.finditer(r'coeff\s+"([^"]+)"\s*\{([^}]*)\}', text):
+        label, body = cm.group(1), cm.group(2)
+        fn  = re.search(r'filename:\s*"([^"]+)"', body)
+        fmt = re.search(r'format:\s*"([^"]+)"', body)
+        att = re.search(r'attenuation:\s*([-\d.]+)', body)
+        if not fn:
+            continue
+        coeffs.append({
+            "label":       label,
+            "filename":    fn.group(1),
+            "format":      fmt.group(1) if fmt else "FLOAT64_LE",
+            "attenuation": float(att.group(1)) if att else 0.0,
+        })
+    return {"rate": rate, "coeffs": coeffs}
+
+
+def _coeff_channel(coeff: dict) -> str:
+    """Human channel name from coeff label / filename (Left / Right / fallback)."""
+    blob = (coeff["label"] + " " + os.path.basename(coeff["filename"])).lower()
+    if re.search(r'\b(l|left|fl)\b', blob) or blob.startswith("l") or "/l." in blob or "l.raw" in blob:
+        return "Left"
+    if re.search(r'\b(r|right|fr)\b', blob) or blob.startswith("r") or "r.raw" in blob:
+        return "Right"
+    return coeff["label"]
+
+
+def _fir_response(filename: str, fmt: str, rate: int,
+                  npoints: int = 700, fmin: float = 10.0) -> dict:
+    """FFT of a raw FIR impulse response → log-spaced magnitude/phase/group-delay."""
+    import numpy as np
+    dtype = _RAW_DTYPES.get(fmt.upper(), "<f8")
+    ir = np.fromfile(filename, dtype=dtype)
+    if ir.size == 0:
+        raise ValueError(f"empty or unreadable filter: {filename}")
+    if np.issubdtype(np.dtype(dtype), np.integer):
+        ir = ir.astype(np.float64) / np.iinfo(np.dtype(dtype)).max
+    else:
+        ir = ir.astype(np.float64)
+
+    n = ir.size
+    spec  = np.fft.rfft(ir)
+    freqs = np.fft.rfftfreq(n, d=1.0 / rate)
+    mag   = 20.0 * np.log10(np.abs(spec) + 1e-12)
+    phase = np.unwrap(np.angle(spec))
+
+    # group delay (ms) = -d(phase)/d(omega); leave bin 0 (omega=0) at 0.
+    omega = 2.0 * np.pi * freqs
+    gd = np.zeros_like(phase)
+    if n > 2:
+        gd[1:] = -np.gradient(phase, omega)[1:]
+    gd_ms = gd * 1000.0
+
+    fmax = rate / 2.0
+    lo = max(1, int(np.searchsorted(freqs, fmin)))
+    targets = np.logspace(np.log10(freqs[lo]), np.log10(fmax), npoints)
+    idx = np.unique(np.clip(np.searchsorted(freqs, targets), lo, len(freqs) - 1))
+
+    return {
+        "taps":  int(n),
+        "freqs": [round(float(freqs[i]), 3) for i in idx],
+        "mag":   [round(float(mag[i]),   3) for i in idx],
+        "phase": [round(float(np.degrees(phase[i])), 2) for i in idx],
+        "gd":    [round(float(gd_ms[i]), 4) for i in idx],
+    }
 
 
 def _format_read_output(cmd_id: str, output: str) -> str:
@@ -608,11 +766,18 @@ def details_dyn_asset(cmd_id, config_name, filename):
 
 @app.route("/readme")
 def readme_page():
-    path = os.path.join(_HERE, "README.md")
-    try:
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-    except FileNotFoundError:
+    # Installed layout keeps README.md next to app.py; the source tree keeps it
+    # one level up (repo root).  Try both so the link works either way.
+    text = None
+    for path in (os.path.join(_HERE, "README.md"),
+                 os.path.join(_HERE, os.pardir, "README.md")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            break
+        except FileNotFoundError:
+            continue
+    if text is None:
         return "README not found", 404
     html = md_lib.markdown(text, extensions=["tables", "fenced_code", "extra"])
     return render_template("details.html", title="arkictrl — README", content=html)
@@ -778,9 +943,11 @@ def mpd_info():
         mpc = _mpc_status(port)
         is_linux = platform.system() == "Linux"
         voss_rate = _virtual_oss_rate() if not is_linux else None
-        alsa_rate = _alsa_rate()        if is_linux     else None
+        alsa_hw   = _alsa_hw_params()   if is_linux     else None
+        alsa_rate = alsa_hw["rate"] if alsa_hw else None
         bf_rate = _brutefir_rate()
         rate_status = _rate_status(mpc["sample_rate"], voss_rate, bf_rate)
+        path_status = _path_status(rate_status, bf_rate is not None)
         return jsonify({
             "ok":      True,
             "running": running,
@@ -798,8 +965,10 @@ def mpd_info():
             "is_linux": is_linux,
             "virtual_oss_rate": voss_rate,
             "alsa_rate": alsa_rate,
+            "alsa": alsa_hw,
             "brutefir_rate": bf_rate,
             "rate_status": rate_status,
+            "path_status": path_status,
         })
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "timeout"})
@@ -971,6 +1140,61 @@ def drc_geometry():
         return jsonify({"ok": False, "error": r.stderr.strip() or "empty"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/filter-response")
+def filter_response_page():
+    return render_template("filter_response.html")
+
+
+@app.route("/drc/filter-response")
+def drc_filter_response():
+    """FFT analysis of the FIR filters loaded by the *running* BruteFIR.
+
+    The active .conf carries absolute paths to its coeff (.raw) files and the
+    sampling rate, so no extra configuration is needed.  When BruteFIR is not
+    running there is no active filter to analyse.
+    """
+    conf_path = _active_brutefir_conf()
+    if not conf_path:
+        return jsonify({
+            "ok": False, "running": False,
+            "error": "BruteFIR is not running — no active filter loaded.",
+        })
+    try:
+        parsed = _parse_brutefir_conf(conf_path)
+        rate = parsed["rate"]
+        if not rate or not parsed["coeffs"]:
+            return jsonify({"ok": False, "running": True,
+                            "error": f"no coeff/sampling_rate in {conf_path}"})
+        # geometry = the configs/<geometry>/ directory name, when present.
+        geometry = os.path.basename(os.path.dirname(conf_path))
+        channels = []
+        palette = {"Left": "#388bfd", "Right": "#d29922"}
+        for c in parsed["coeffs"]:
+            ch = _coeff_channel(c)
+            resp = _fir_response(c["filename"], c["format"], rate)
+            resp.update({
+                "name": ch,
+                "color": palette.get(ch, "#3fb950"),
+                "attenuation": c["attenuation"],
+                "format": c["format"],
+                "file": os.path.basename(c["filename"]),
+            })
+            channels.append(resp)
+        return jsonify({
+            "ok": True, "running": True,
+            "geometry": geometry,
+            "rate": rate,
+            "conf": os.path.basename(conf_path),
+            "channels": channels,
+        })
+    except FileNotFoundError as e:
+        return jsonify({"ok": False, "running": True, "error": f"filter file not found: {e}"})
+    except ImportError:
+        return jsonify({"ok": False, "running": True, "error": "numpy is required for filter analysis"})
+    except Exception as e:
+        return jsonify({"ok": False, "running": True, "error": str(e)})
 
 
 @app.route("/brutefir/cpu")

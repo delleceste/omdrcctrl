@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DRC filter response</title>
+    <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+    <style>
+        :root {
+            --bg:     #0d1117;
+            --panel:  #161b22;
+            --border: #30363d;
+            --text:   #e6edf3;
+            --muted:  #8b949e;
+            --accent: #388bfd;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 18px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--bg); color: var(--text);
+        }
+        .topbar {
+            display: flex; align-items: baseline; gap: 14px;
+            flex-wrap: wrap; margin-bottom: 14px;
+        }
+        h1 { font-size: 1.25rem; margin: 0; }
+        a.back { color: var(--accent); text-decoration: none; font-size: .85rem; }
+        a.back:hover { text-decoration: underline; }
+        .meta { color: var(--muted); font-size: .8rem; }
+        .chart-card {
+            background: var(--panel); border: 1px solid var(--border);
+            border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+        }
+        .chart-card h2 {
+            font-size: .9rem; font-weight: 600; margin: 0 0 8px;
+            color: var(--text);
+        }
+        .chart-card .sub { font-size: .72rem; color: var(--muted); font-weight: 400; }
+        .wrap { position: relative; height: 260px; }
+        #status { color: var(--muted); font-size: .9rem; padding: 26px 4px; line-height: 1.5; }
+        #status.error { color: #f85149; }
+        .refresh {
+            background: var(--panel); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px;
+            padding: 5px 10px; font-size: .8rem; cursor: pointer;
+        }
+        .refresh:hover { border-color: var(--accent); color: var(--accent); }
+        .note {
+            color: var(--muted); font-size: .72rem; line-height: 1.5;
+            border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <a class="back" href="/">← Back</a>
+        <h1>DRC filter response</h1>
+        <span class="meta" id="meta"></span>
+        <span style="flex:1"></span>
+        <button class="refresh" onclick="load()">↻ Refresh</button>
+    </div>
+
+    <div id="status">Loading filter analysis…</div>
+
+    <div id="charts" style="display:none">
+        <div class="chart-card">
+            <h2>Magnitude <span class="sub">— FFT of the FIR impulse response, dB vs frequency (log)</span></h2>
+            <div class="wrap"><canvas id="chart-mag"></canvas></div>
+        </div>
+        <div class="chart-card">
+            <h2>Phase <span class="sub">— unwrapped phase, degrees vs frequency (log)</span></h2>
+            <div class="wrap"><canvas id="chart-phase"></canvas></div>
+        </div>
+        <div class="chart-card">
+            <h2>Group delay <span class="sub">— −dφ/dω, milliseconds vs frequency (log)</span></h2>
+            <div class="wrap"><canvas id="chart-gd"></canvas></div>
+        </div>
+        <div class="note" id="note"></div>
+    </div>
+
+<script>
+const charts = {};
+const FREQ_TICKS = [10,20,50,100,200,500,1000,2000,5000,10000,20000,50000,100000];
+
+function baseOptions(yTitle, yExtra) {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        parsing: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            x: {
+                type: 'logarithmic',
+                title: { display: true, text: 'Frequency (Hz)', color: '#8b949e' },
+                min: 10,
+                ticks: {
+                    color: '#8b949e', autoSkip: false, maxRotation: 0,
+                    callback: v => FREQ_TICKS.includes(v) ? (v >= 1000 ? (v/1000)+'k' : v) : '',
+                },
+                grid: { color: 'rgba(139,148,158,.15)' },
+            },
+            y: Object.assign({
+                title: { display: true, text: yTitle, color: '#8b949e' },
+                ticks: { color: '#8b949e' },
+                grid: { color: 'rgba(139,148,158,.15)' },
+            }, yExtra || {}),
+        },
+        plugins: {
+            legend: { labels: { color: '#e6edf3', boxWidth: 14 } },
+            tooltip: { callbacks: {
+                title: items => items.length ? Math.round(items[0].parsed.x) + ' Hz' : '',
+            } },
+        },
+        elements: { point: { radius: 0 }, line: { borderWidth: 1.5, tension: 0 } },
+    };
+}
+
+function makeDatasets(channels, key) {
+    return channels.map(ch => ({
+        label: ch.name,
+        borderColor: ch.color,
+        backgroundColor: ch.color,
+        data: ch.freqs.map((f, i) => ({ x: f, y: ch[key][i] })),
+    }));
+}
+
+function draw(id, channels, key, yTitle, yExtra) {
+    const ctx = document.getElementById(id);
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: makeDatasets(channels, key) },
+        options: baseOptions(yTitle, yExtra),
+    });
+}
+
+async function load() {
+    const statusEl = document.getElementById('status');
+    const chartsEl = document.getElementById('charts');
+    statusEl.className = '';
+    statusEl.style.display = '';
+    statusEl.textContent = 'Loading filter analysis…';
+    document.getElementById('meta').textContent = '';
+    try {
+        const d = await (await fetch('/drc/filter-response')).json();
+        if (!d.ok) {
+            statusEl.className = d.running === false ? '' : 'error';
+            statusEl.textContent = d.running === false
+                ? 'BruteFIR is not running, so no room-correction filter is loaded. ' +
+                  'Apply a DRC configuration on the main page, then refresh this page.'
+                : (d.error || 'error');
+            chartsEl.style.display = 'none';
+            return;
+        }
+
+        const taps = d.channels.length ? d.channels[0].taps : 0;
+        document.getElementById('meta').textContent =
+            `${d.geometry} · ${d.rate.toLocaleString()} Hz · ${taps.toLocaleString()} taps`;
+
+        // Readability: clamp the magnitude view to a sensible window so deep
+        // correction notches don't flatten the whole plot. Data is untouched.
+        let lo = Infinity, hi = -Infinity;
+        for (const ch of d.channels) for (const v of ch.mag) { if (v < lo) lo = v; if (v > hi) hi = v; }
+        const magY = { min: Math.max(lo - 3, -42), max: hi + 3 };
+
+        draw('chart-mag',   d.channels, 'mag',   'Magnitude (dB)', magY);
+        draw('chart-phase', d.channels, 'phase', 'Phase (°)');
+        draw('chart-gd',    d.channels, 'gd',    'Group delay (ms)');
+
+        const att = d.channels.map(c => `${c.name} ${c.attenuation} dB`).join(', ');
+        document.getElementById('note').textContent =
+            `Computed live by FFT of the loaded ${d.channels[0].format} impulse responses ` +
+            `(${d.channels.map(c => c.file).join(', ')}), generated with REW + SoX. ` +
+            `Coeff attenuation: ${att}. Curves are log-spaced; the magnitude axis is clamped ` +
+            `for readability while the underlying filters are shown exactly as loaded.`;
+
+        statusEl.style.display = 'none';
+        chartsEl.style.display = '';
+    } catch (e) {
+        statusEl.className = 'error';
+        statusEl.textContent = 'network error';
+    }
+}
+
+load();
+</script>
+</body>
+</html>

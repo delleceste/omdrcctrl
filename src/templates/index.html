@@ -350,7 +350,7 @@
 {% macro render_group(group_name, group_label, cmds) %}
 <div class="card">
     <div class="card-title"{% if group_name == 'drc' %} style="display:flex;justify-content:space-between;align-items:baseline"{% endif %}>
-        <span>{{ group_label }}</span>{% if group_name == 'drc' %}<span id="drc-geometry-label" style="font-size:.75rem;font-weight:400;color:var(--muted)"></span>{% endif %}
+        <span>{{ group_label }}</span>{% if group_name == 'drc' %}<span style="display:flex;align-items:baseline;gap:10px"><span id="drc-geometry-label" style="font-size:.75rem;font-weight:400;color:var(--muted)"></span><a class="btn-details active" href="/filter-response">Filter response ↗</a></span>{% endif %}
     </div>
 
     {% for cmd in cmds %}
@@ -893,6 +893,17 @@ async function fetchMpdInfo() {
                          d.alsa_rate ? 'var(--text)' : 'var(--muted)')
                 : monRow('virtual_oss', d.virtual_oss_rate ? d.virtual_oss_rate + ' Hz' : 'not running',
                          d.virtual_oss_rate ? 'var(--text)' : 'var(--muted)')) +
+            // What the DAC is actually being fed right now (ALSA hw_params).
+            (d.alsa
+                ? monRow('DAC feed',
+                         `${d.alsa.format||'?'} · ${d.alsa.channels!=null?d.alsa.channels+'ch':'?'}` +
+                         (d.alsa.card!=null?`  (hw:${d.alsa.card},${d.alsa.device})`:''),
+                         'var(--green)') +
+                  ((d.alsa.period_size!=null && d.alsa.buffer_size!=null)
+                      ? monRow('DAC buffer',
+                               `${d.alsa.period_size} / ${d.alsa.buffer_size} frames`, 'var(--muted)')
+                      : '')
+                : '') +
             monRow('BruteFIR', d.brutefir_rate ? d.brutefir_rate + ' Hz' : 'not running',
                    d.brutefir_rate ? 'var(--text)' : 'var(--muted)') +
             monRow('Rate', verdict.text, verdictColor) +
@@ -901,6 +912,26 @@ async function fetchMpdInfo() {
             monRow('CPU',    d.cpu.toFixed(1) + '%',
                    d.cpu > 10 ? 'var(--yellow)' : 'var(--green)');
         if (d.mpc_error) html += monRow('Client error', d.mpc_error, 'var(--red)');
+
+        // Plain-language audio-path verdict (bit-perfect reassurance).
+        const ps = d.path_status || { kind: 'unknown', text: '', detail: '' };
+        const psColor = ps.kind === 'match' ? 'var(--green)' :
+                        ps.kind === 'drc'   ? 'var(--accent)' :
+                        ps.kind === 'mismatch' ? 'var(--red)' : 'var(--muted)';
+        const psBg = ps.kind === 'match' ? 'rgba(63,185,80,.10)' :
+                     ps.kind === 'drc'   ? 'rgba(56,139,253,.10)' :
+                     ps.kind === 'mismatch' ? 'rgba(248,81,73,.10)' : 'transparent';
+        if (ps.text) {
+            html += `<div style="margin-top:8px;padding:7px 9px;border-radius:6px;` +
+                    `border:1px solid ${psColor};background:${psBg}">` +
+                    `<div style="font-size:.82rem;font-weight:600;color:${psColor}">${escHtml(ps.text)}</div>` +
+                    (ps.detail ? `<div style="font-size:.72rem;color:var(--muted);margin-top:2px;line-height:1.4">${escHtml(ps.detail)}</div>` : '') +
+                    `</div>`;
+        }
+        html += `<div style="font-size:.7rem;color:var(--muted);margin-top:6px;line-height:1.45">` +
+                `Signal path: MPD → BruteFIR (64-bit float convolution) → ` +
+                `${d.is_linux ? 'ALSA' : 'virtual_oss'} → DAC. ` +
+                `No sample-rate conversion occurs while all rates match.</div>`;
         el.innerHTML = html;
     } catch {
         el.innerHTML = '<span style="color:var(--red)">network error</span>';

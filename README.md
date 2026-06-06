@@ -27,6 +27,16 @@ provides no feedback. Every command here either shows its output directly
   the Details button appears when a nominated systemctl unit is active.
 - **Dark, touch-friendly UI** — works well on a phone home screen without
   installing any app.
+- **Audio health monitoring** — purpose-built for a *headless* music server:
+  the MPD panel reports the full chain (MPD → BruteFIR → ALSA/virtual_oss →
+  DAC), the exact stream the DAC is being fed (ALSA `hw_params`: format, rate,
+  channels, period/buffer), a sample-rate match check, and a plain-language
+  **bit-perfect / no-resampling verdict** so you can confirm everything is
+  correct without a screen attached.
+- **DRC filter analysis** — a **Filter response** page renders the live
+  frequency-magnitude, phase, and group-delay of the BruteFIR FIR filters
+  (`L.raw` / `R.raw`), computed on demand by FFT. See
+  [DRC filter response](#drc-filter-response).
 - **No hard-coded commands** — everything lives in `commands.conf`; restart
   the service to pick up changes.
 - **CMake install** — single `cmake --install` copies all files and installs
@@ -41,6 +51,7 @@ provides no feedback. Every command here either shows its output directly
 | Python ≥ 3.9 | `list[dict]` type hints |
 | Flask ≥ 2.3 | `pip install flask` |
 | Markdown ≥ 3.5 | `pip install markdown` — renders details pages |
+| NumPy ≥ 1.21 | `pip install numpy` — FFT for the filter-response page. *Optional:* if absent, every other feature works and the filter page simply reports that NumPy is required. |
 | CMake ≥ 3.16 | build / install only |
 | systemd or rc.d | service management: systemd on Linux, rc.d on FreeBSD |
 
@@ -57,9 +68,12 @@ arkictrl/
 │   ├── app.py               # Flask application
 │   ├── commands.conf        # command definitions (edit this)
 │   ├── arkictrl.sh.in       # launcher script template
-│   └── templates/
-│       ├── index.html       # Jinja2 + vanilla-JS control panel
-│       └── details.html     # markdown details page
+│   ├── templates/
+│   │   ├── index.html            # Jinja2 + vanilla-JS control panel
+│   │   ├── details.html          # markdown details page
+│   │   └── filter_response.html  # DRC filter-response charts page
+│   └── static/
+│       └── chart.umd.min.js # vendored Chart.js (filter-response charts)
 ├── rc.d/
 │   └── arkictrl.in          # FreeBSD rc.d script template
 └── systemd/
@@ -107,6 +121,7 @@ available there.
 | `/usr/local/lib/arkictrl/app.py` | Flask application |
 | `/usr/local/lib/arkictrl/README.md` | this file (served at `/readme`) |
 | `/usr/local/lib/arkictrl/templates/` | HTML templates |
+| `/usr/local/lib/arkictrl/static/` | vendored Chart.js |
 | `/usr/local/etc/arkictrl/commands.conf` | command definitions |
 | `/usr/local/lib/systemd/system/arkictrl.service` | systemd system unit |
 
@@ -118,6 +133,7 @@ available there.
 | `~/.local/lib/arkictrl/app.py` | Flask application |
 | `~/.local/lib/arkictrl/README.md` | this file (served at `/readme`) |
 | `~/.local/lib/arkictrl/templates/` | HTML templates |
+| `~/.local/lib/arkictrl/static/` | vendored Chart.js |
 | `~/.local/etc/arkictrl/commands.conf` | command definitions |
 | `~/.local/share/systemd/user/arkictrl.service` | systemd user unit |
 
@@ -129,6 +145,7 @@ available there.
 | `/usr/local/lib/arkictrl/app.py` | Flask application |
 | `/usr/local/lib/arkictrl/README.md` | this file (served at `/readme`) |
 | `/usr/local/lib/arkictrl/templates/` | HTML templates |
+| `/usr/local/lib/arkictrl/static/` | vendored Chart.js |
 | `/usr/local/etc/arkictrl/commands.conf` | command definitions |
 | `/usr/local/etc/rc.d/arkictrl` | FreeBSD rc.d service script |
 
@@ -556,6 +573,91 @@ sum. Uses a BSD/Linux-compatible `ps` parser and filters command names matching
 
 ---
 
+### `GET /mpd/info`
+
+Full audio-chain snapshot used by the MPD panel. Locates the MPD/musicpd
+daemon (`pgrep -x`), reads its config to find the control port, queries it for
+the playing stream, and inspects the downstream stages.
+
+```json
+{
+  "ok": true,
+  "running": true,
+  "cpu": 3.1,
+  "conf": "/etc/mpd.conf",
+  "port": "6600",
+  "client": "mpc",
+  "state": "playing",
+  "song": "Artist - Title",
+  "audio": "192000:24:2",
+  "sample_rate": 192000,
+  "bit_depth": 24,
+  "channels": 2,
+  "is_linux": true,
+  "virtual_oss_rate": null,
+  "alsa_rate": 192000,
+  "alsa": { "card": 0, "device": 0, "format": "S32_LE", "rate": 192000,
+            "channels": 2, "period_size": 8192, "buffer_size": 32768 },
+  "brutefir_rate": 192000,
+  "rate_status": { "kind": "match", "text": "SAMPLE RATE MATCH" },
+  "path_status": { "kind": "drc", "text": "Full-resolution DRC · no resampling",
+                   "detail": "BruteFIR applies room correction at the native rate …" }
+}
+```
+
+- **`audio` / `sample_rate` / `bit_depth` / `channels`** — the stream MPD
+  reports. When modern `mpc` omits the `audio:` line, the value is read
+  directly over the MPD protocol (`status` command on the control port).
+- **`alsa`** (Linux) — parsed from `/proc/asound/card*/pcm*p/sub*/hw_params`;
+  this is exactly what the DAC is being fed *right now*. `null` when no stream
+  is open. On FreeBSD `virtual_oss_rate` is reported instead.
+- **`rate_status`** — `kind` is `match` / `mismatch` / `unknown`; compares MPD
+  against virtual_oss + BruteFIR.
+- **`path_status`** — plain-language verdict for the bit-perfect hint:
+  - `match` → **Bit-perfect passthrough** (DRC off, all rates equal)
+  - `drc` → **Full-resolution DRC · no resampling** (BruteFIR engaged at native rate, 64-bit float)
+  - `mismatch` → **Resampling active**
+  - `unknown` → not enough information (e.g. nothing playing)
+
+---
+
+### `GET /filter-response`
+
+Renders the **DRC filter response** HTML page (magnitude / phase / group-delay
+charts). Linked from the DRC card on the main page.
+
+---
+
+### `GET /drc/filter-response`
+
+Returns the FFT analysis of the FIR filters loaded by the **running** BruteFIR.
+The active `.conf` is located from BruteFIR's command line; it carries the
+absolute paths to its coeff (`.raw`) files, their sample format, and the
+sampling rate — so no extra configuration is required. When BruteFIR is not
+running there is no active filter and the endpoint says so.
+
+```json
+{
+  "ok": true, "running": true,
+  "geometry": "120.blue", "rate": 192000, "conf": "brutefir-192000.conf",
+  "channels": [
+    { "name": "Left", "color": "#388bfd", "file": "L.raw", "format": "FLOAT64_LE",
+      "attenuation": 3.0, "taps": 524288,
+      "freqs": [10.0, …], "mag": [-1.2, …], "phase": [-43.1, …], "gd": [12.4, …] }
+  ]
+}
+{ "ok": false, "running": false, "error": "BruteFIR is not running — no active filter loaded." }
+```
+
+Each channel's impulse response is read with NumPy, transformed with `rfft`,
+and reduced to ~700 log-spaced points. `mag` is the magnitude in dB (the raw
+filter transfer function, including its `attenuation`), `phase` is the
+unwrapped phase in degrees, and `gd` is the group delay (`−dφ/dω`) in
+milliseconds. **The filter files are never modified** — they are generated
+externally with REW + SoX and only read here.
+
+---
+
 ### `GET /system/advanced`
 
 FreeBSD-only diagnostic endpoint. Returns the outputs of:
@@ -603,11 +705,42 @@ File paths are configured via the `[qconnect]` section in `commands.conf`.
 
 ### MPD
 
-Shows MPD daemon state, the portable client used (`musicpc` on FreeBSD, `mpc`
-on Linux), playback state, audio sample rate, bit depth, `virtual_oss` rate,
-and BruteFIR rate. The panel displays **SAMPLE RATE MATCH** in green when MPD,
-`virtual_oss`, and BruteFIR all use the same sample rate; otherwise it displays
-**RESAMPLING** in red.
+The central audio-health panel for a headless server. Backed by
+[`GET /mpd/info`](#get-mpdinfo), it shows:
+
+- Daemon state and the portable client used (`musicpc` on FreeBSD, `mpc` on Linux)
+- Playback state and current song
+- The stream MPD reports — sample rate, bit depth, channels
+- **DAC feed** — what the DAC is actually receiving *now*: ALSA `hw_params`
+  format/channels and the period/buffer sizes (Linux), or the `virtual_oss`
+  rate (FreeBSD). This is read straight from `/proc/asound` and reflects the
+  real hardware stream, not just what was requested.
+- BruteFIR rate, and a **SAMPLE RATE MATCH** (green) / **RESAMPLING** (red)
+  comparison across MPD, `virtual_oss`/ALSA, and BruteFIR
+- A highlighted **path verdict** giving a plain-language bit-perfect assessment
+  (`Bit-perfect passthrough`, `Full-resolution DRC · no resampling`, or
+  `Resampling active`) plus a one-line explanation
+- A static **signal path** reminder (`MPD → BruteFIR → ALSA/virtual_oss → DAC`)
+
+A small **DRC status** sub-section (refreshed manually) lists the BruteFIR
+`drc.sh status` rows beneath the panel.
+
+### DRC filter response
+
+The DRC card header carries a **Filter response ↗** button that opens a
+dedicated page ([`GET /filter-response`](#get-filter-response)) charting the
+loaded room-correction FIR filters. Three stacked, log-frequency Chart.js plots
+show **magnitude (dB)**, **unwrapped phase (°)**, and **group delay (ms)**, with
+the Left and Right channels overlaid. The data comes from
+[`GET /drc/filter-response`](#get-drcfilter-response), which FFTs the live
+`L.raw` / `R.raw` impulse responses on demand.
+
+The page only has something to show while BruteFIR is running (that is when a
+filter is loaded); otherwise it explains that no filter is active. The
+magnitude axis is clamped for readability, but the filters themselves — built
+externally with REW + SoX — are read and displayed unaltered. Chart.js is
+vendored locally (`static/chart.umd.min.js`), so the page works on an offline
+machine.
 
 ### Brutefir CPU
 

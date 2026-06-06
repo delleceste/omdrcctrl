@@ -75,6 +75,10 @@ install(FILES src/app.py README.md
 install(DIRECTORY src/templates
         DESTINATION lib/arkictrl)
 
+# Static assets (vendored Chart.js for the filter-response page)
+install(DIRECTORY src/static
+        DESTINATION lib/arkictrl)
+
 # Default config (only if not already present — preserve user edits)
 install(FILES src/commands.conf
         DESTINATION etc/arkictrl
