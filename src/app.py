@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import glob
 import os
 import platform
 import pwd
@@ -422,6 +423,22 @@ def _virtual_oss_rate() -> int | None:
     return None
 
 
+def _alsa_rate() -> int | None:
+    """Rate of the first non-idle ALSA playback stream (Linux only)."""
+    for path in sorted(glob.glob("/proc/asound/card*/pcm*p/sub*/hw_params")):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                if f.readline().strip() == "closed":
+                    continue
+                for line in f:
+                    m = re.match(r'^rate:\s+(\d+)', line)
+                    if m:
+                        return int(m.group(1))
+        except OSError:
+            continue
+    return None
+
+
 def _brutefir_rate() -> int | None:
     for line in _ps_arg_lines():
         if "brutefir" not in line:
@@ -728,7 +745,9 @@ def mpd_info():
 
         port = _mpd_port_from_conf(conf) if conf else None
         mpc = _mpc_status(port)
-        voss_rate = _virtual_oss_rate()
+        is_linux = platform.system() == "Linux"
+        voss_rate = _virtual_oss_rate() if not is_linux else None
+        alsa_rate = _alsa_rate()        if is_linux     else None
         bf_rate = _brutefir_rate()
         rate_status = _rate_status(mpc["sample_rate"], voss_rate, bf_rate)
         return jsonify({
@@ -745,7 +764,9 @@ def mpd_info():
             "bit_depth": mpc["bit_depth"],
             "channels": mpc["channels"],
             "mpc_error": mpc["error"],
+            "is_linux": is_linux,
             "virtual_oss_rate": voss_rate,
+            "alsa_rate": alsa_rate,
             "brutefir_rate": bf_rate,
             "rate_status": rate_status,
         })

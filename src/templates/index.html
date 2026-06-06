@@ -888,8 +888,11 @@ async function fetchMpdInfo() {
                    d.bit_depth ? 'var(--text)' : 'var(--muted)') +
             monRow('Channels', d.channels || 'unknown',
                    d.channels ? 'var(--text)' : 'var(--muted)') +
-            monRow('virtual_oss', d.virtual_oss_rate ? d.virtual_oss_rate + ' Hz' : 'not running',
-                   d.virtual_oss_rate ? 'var(--text)' : 'var(--muted)') +
+            (d.is_linux
+                ? monRow('ALSA', d.alsa_rate ? d.alsa_rate + ' Hz' : 'not running',
+                         d.alsa_rate ? 'var(--text)' : 'var(--muted)')
+                : monRow('virtual_oss', d.virtual_oss_rate ? d.virtual_oss_rate + ' Hz' : 'not running',
+                         d.virtual_oss_rate ? 'var(--text)' : 'var(--muted)')) +
             monRow('BruteFIR', d.brutefir_rate ? d.brutefir_rate + ' Hz' : 'not running',
                    d.brutefir_rate ? 'var(--text)' : 'var(--muted)') +
             monRow('Rate', verdict.text, verdictColor) +
