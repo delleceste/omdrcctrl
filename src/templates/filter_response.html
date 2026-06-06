@@ -69,11 +69,11 @@
             <div class="wrap"><canvas id="chart-mag"></canvas></div>
         </div>
         <div class="chart-card">
-            <h2>Phase <span class="sub">— wrapped phase, −180…+180° vs frequency (log)</span></h2>
+            <h2>Phase <span class="sub">— delay-compensated correction phase vs frequency (log)</span></h2>
             <div class="wrap"><canvas id="chart-phase"></canvas></div>
         </div>
         <div class="chart-card">
-            <h2>Group delay <span class="sub">— −dφ/dω, milliseconds vs frequency (log)</span></h2>
+            <h2>Group delay <span class="sub">— residual after bulk FIR delay removal, milliseconds vs frequency (log)</span></h2>
             <div class="wrap"><canvas id="chart-gd"></canvas></div>
         </div>
         <div class="note" id="note"></div>
@@ -166,16 +166,17 @@ async function load() {
         const magY = { min: Math.max(lo - 3, -42), max: hi + 3 };
 
         draw('chart-mag',   d.channels, 'mag',   'Magnitude (dB)', magY);
-        draw('chart-phase', d.channels, 'phase', 'Phase (°)',
-             { min: -180, max: 180, ticks: { color: '#8b949e', stepSize: 90 } });
+        draw('chart-phase', d.channels, 'phase', 'Delay-compensated phase (°)');
         draw('chart-gd',    d.channels, 'gd',    'Group delay (ms)');
 
         const att = d.channels.map(c => `${c.name} ${c.attenuation} dB`).join(', ');
+        const delays = d.channels.map(c => `${c.name} ${c.delay_ms} ms`).join(', ');
+        const fmax = d.channels.length ? Math.round(d.channels[0].fmax).toLocaleString() : '20,000';
         document.getElementById('note').textContent =
             `Computed live by FFT of the loaded ${d.channels[0].format} impulse responses ` +
             `(${d.channels.map(c => c.file).join(', ')}), generated with REW + SoX. ` +
-            `Coeff attenuation: ${att}. Curves are log-spaced; the magnitude axis is clamped ` +
-            `for readability while the underlying filters are shown exactly as loaded.`;
+            `Coeff attenuation: ${att}. Bulk delay removed for phase/group-delay: ${delays}. ` +
+            `Curves are log-spaced to ${fmax} Hz; the magnitude axis is clamped for readability.`;
 
         statusEl.style.display = 'none';
         chartsEl.style.display = '';

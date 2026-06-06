@@ -608,8 +608,15 @@ def _coeff_channel(coeff: dict) -> str:
 
 
 def _fir_response(filename: str, fmt: str, rate: int,
-                  npoints: int = 700, fmin: float = 10.0) -> dict:
-    """FFT of a raw FIR impulse response → log-spaced magnitude/phase/group-delay."""
+                  npoints: int = 700, fmin: float = 10.0,
+                  fmax: float = 20_000.0) -> dict:
+    """FFT of a raw FIR impulse response -> magnitude/phase/group-delay.
+
+    Correction FIRs include a large bulk delay because the impulse is placed
+    well inside the coefficient window.  Plotting wrapped raw FFT phase makes
+    that delay dominate the graph, so estimate it from passband group delay and
+    show the delay-compensated correction phase instead.
+    """
     import numpy as np
     dtype = _RAW_DTYPES.get(fmt.upper(), "<f8")
     ir = np.fromfile(filename, dtype=dtype)
@@ -623,29 +630,47 @@ def _fir_response(filename: str, fmt: str, rate: int,
     n = ir.size
     spec  = np.fft.rfft(ir)
     freqs = np.fft.rfftfreq(n, d=1.0 / rate)
-    mag   = 20.0 * np.log10(np.abs(spec) + 1e-12)
-    angle = np.angle(spec)            # wrapped phase, (-π, π]
-
-    # group delay (ms) = -d(phase)/d(omega) needs the *unwrapped* phase;
-    # leave bin 0 (omega=0) at 0.
     omega = 2.0 * np.pi * freqs
-    unwrapped = np.unwrap(angle)
-    gd = np.zeros_like(unwrapped)
-    if n > 2:
-        gd[1:] = -np.gradient(unwrapped, omega)[1:]
-    gd_ms = gd * 1000.0
+    mag_abs = np.abs(spec)
+    mag = 20.0 * np.log10(mag_abs + 1e-12)
+    angle = np.angle(spec)
 
-    fmax = rate / 2.0
+    # Group delay (seconds) = -d(phase)/d(omega), using unwrapped raw phase.
+    raw_unwrapped = np.unwrap(angle)
+    gd = np.zeros_like(raw_unwrapped)
+    if n > 2:
+        gd[1:] = -np.gradient(raw_unwrapped, omega)[1:]
+
+    fmax = min(rate / 2.0, fmax)
+    delay_band = (
+        (freqs >= max(fmin, 20.0)) &
+        (freqs <= fmax) &
+        (mag_abs > (mag_abs.max() * 1e-6)) &
+        np.isfinite(gd)
+    )
+    if np.count_nonzero(delay_band) >= 3:
+        bulk_delay = float(np.median(gd[delay_band]))
+    else:
+        bulk_delay = float(np.argmax(np.abs(ir)) / rate)
+
+    compensated = spec * np.exp(1j * omega * bulk_delay)
+    phase = np.unwrap(np.angle(compensated))
+    gd_ms = (gd - bulk_delay) * 1000.0
+
     lo = max(1, int(np.searchsorted(freqs, fmin)))
+    hi = min(len(freqs) - 1, int(np.searchsorted(freqs, fmax)))
+    if hi <= lo:
+        hi = len(freqs) - 1
     targets = np.logspace(np.log10(freqs[lo]), np.log10(fmax), npoints)
-    idx = np.unique(np.clip(np.searchsorted(freqs, targets), lo, len(freqs) - 1))
+    idx = np.unique(np.clip(np.searchsorted(freqs, targets), lo, hi))
 
     return {
         "taps":  int(n),
+        "delay_ms": round(bulk_delay * 1000.0, 4),
+        "fmax": round(float(fmax), 3),
         "freqs": [round(float(freqs[i]), 3) for i in idx],
         "mag":   [round(float(mag[i]),   3) for i in idx],
-        # wrapped phase in degrees, range (-180, +180]
-        "phase": [round(float(np.degrees(angle[i])), 2) for i in idx],
+        "phase": [round(float(np.degrees(phase[i])), 2) for i in idx],
         "gd":    [round(float(gd_ms[i]), 4) for i in idx],
     }
 

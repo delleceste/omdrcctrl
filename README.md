@@ -643,6 +643,7 @@ running there is no active filter and the endpoint says so.
   "channels": [
     { "name": "Left", "color": "#388bfd", "file": "L.raw", "format": "FLOAT64_LE",
       "attenuation": 3.0, "taps": 524288,
+      "delay_ms": 500.01,
       "freqs": [10.0, …], "mag": [-1.2, …], "phase": [-43.1, …], "gd": [12.4, …] }
   ]
 }
@@ -650,11 +651,12 @@ running there is no active filter and the endpoint says so.
 ```
 
 Each channel's impulse response is read with NumPy, transformed with `rfft`,
-and reduced to ~700 log-spaced points. `mag` is the magnitude in dB (the raw
-filter transfer function, including its `attenuation`), `phase` is the wrapped
-phase in degrees (−180…+180°), and `gd` is the group delay (`−dφ/dω`, computed
-from the unwrapped phase) in milliseconds. **The filter files are never modified** — they are generated
-externally with REW + SoX and only read here.
+and reduced to ~700 log-spaced points in the audio correction band. `mag` is
+the magnitude in dB (the raw filter transfer function, including its
+`attenuation`), `phase` is the unwrapped phase after removing the estimated
+bulk FIR delay, and `gd` is residual group delay in milliseconds. **The filter
+files are never modified** — they are generated externally with REW + SoX and
+only read here.
 
 ---
 
@@ -730,8 +732,8 @@ A small **DRC status** sub-section (refreshed manually) lists the BruteFIR
 The DRC card header carries a **Filter response ↗** button that opens a
 dedicated page ([`GET /filter-response`](#get-filter-response)) charting the
 loaded room-correction FIR filters. Three stacked, log-frequency Chart.js plots
-show **magnitude (dB)**, **wrapped phase (±180°)**, and **group delay (ms)**, with
-the Left and Right channels overlaid. The data comes from
+show **magnitude (dB)**, **delay-compensated phase (°)**, and **residual group
+delay (ms)**, with the Left and Right channels overlaid. The data comes from
 [`GET /drc/filter-response`](#get-drcfilter-response), which FFTs the live
 `L.raw` / `R.raw` impulse responses on demand.
 
