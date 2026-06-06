@@ -69,7 +69,7 @@
             <div class="wrap"><canvas id="chart-mag"></canvas></div>
         </div>
         <div class="chart-card">
-            <h2>Phase <span class="sub">— unwrapped phase, degrees vs frequency (log)</span></h2>
+            <h2>Phase <span class="sub">— wrapped phase, −180…+180° vs frequency (log)</span></h2>
             <div class="wrap"><canvas id="chart-phase"></canvas></div>
         </div>
         <div class="chart-card">
@@ -166,7 +166,8 @@ async function load() {
         const magY = { min: Math.max(lo - 3, -42), max: hi + 3 };
 
         draw('chart-mag',   d.channels, 'mag',   'Magnitude (dB)', magY);
-        draw('chart-phase', d.channels, 'phase', 'Phase (°)');
+        draw('chart-phase', d.channels, 'phase', 'Phase (°)',
+             { min: -180, max: 180, ticks: { color: '#8b949e', stepSize: 90 } });
         draw('chart-gd',    d.channels, 'gd',    'Group delay (ms)');
 
         const att = d.channels.map(c => `${c.name} ${c.attenuation} dB`).join(', ');

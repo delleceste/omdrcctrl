@@ -624,13 +624,15 @@ def _fir_response(filename: str, fmt: str, rate: int,
     spec  = np.fft.rfft(ir)
     freqs = np.fft.rfftfreq(n, d=1.0 / rate)
     mag   = 20.0 * np.log10(np.abs(spec) + 1e-12)
-    phase = np.unwrap(np.angle(spec))
+    angle = np.angle(spec)            # wrapped phase, (-π, π]
 
-    # group delay (ms) = -d(phase)/d(omega); leave bin 0 (omega=0) at 0.
+    # group delay (ms) = -d(phase)/d(omega) needs the *unwrapped* phase;
+    # leave bin 0 (omega=0) at 0.
     omega = 2.0 * np.pi * freqs
-    gd = np.zeros_like(phase)
+    unwrapped = np.unwrap(angle)
+    gd = np.zeros_like(unwrapped)
     if n > 2:
-        gd[1:] = -np.gradient(phase, omega)[1:]
+        gd[1:] = -np.gradient(unwrapped, omega)[1:]
     gd_ms = gd * 1000.0
 
     fmax = rate / 2.0
@@ -642,7 +644,8 @@ def _fir_response(filename: str, fmt: str, rate: int,
         "taps":  int(n),
         "freqs": [round(float(freqs[i]), 3) for i in idx],
         "mag":   [round(float(mag[i]),   3) for i in idx],
-        "phase": [round(float(np.degrees(phase[i])), 2) for i in idx],
+        # wrapped phase in degrees, range (-180, +180]
+        "phase": [round(float(np.degrees(angle[i])), 2) for i in idx],
         "gd":    [round(float(gd_ms[i]), 4) for i in idx],
     }
 
