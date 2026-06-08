@@ -1,55 +1,55 @@
 #!/bin/sh
 #
-# PROVIDE: arkictrl
+# PROVIDE: omdrcctrl
 # REQUIRE: NETWORKING LOGIN
 # KEYWORD: shutdown
 
 . /etc/rc.subr
 
-name="arkictrl"
-rcvar="arkictrl_enable"
+name="omdrcctrl"
+rcvar="omdrcctrl_enable"
 
 load_rc_config "$name"
 
-: ${arkictrl_enable:="NO"}
-: ${arkictrl_user:="@ARKICTRL_SERVICE_USER@"}
+: ${omdrcctrl_enable:="NO"}
+: ${omdrcctrl_user:="@OMDRCCTRL_SERVICE_USER@"}
 # ${name}_env is applied by rc.subr via env(1). rc runs with a minimal PATH
 # that omits /usr/local/{s,}bin, where python3 and the tools app.py shells out
 # to (pgrep, kdeconnect-cli, ...) live, so set it explicitly. DISPLAY lets the
 # app reach the local X session.
-: ${arkictrl_env:="PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin DISPLAY=:0"}
+: ${omdrcctrl_env:="PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin DISPLAY=:0"}
 
 command="/usr/sbin/daemon"
 
 if [ "$(id -u)" -eq 0 ]; then
-	# Started as root: rc.subr drops privileges to ${arkictrl_user} (the
+	# Started as root: rc.subr drops privileges to ${omdrcctrl_user} (the
 	# special ${name}_user variable) via su(1). Do NOT also pass daemon -u:
 	# using both runs setusercontext() a second time as the already-dropped
 	# user and fails with "daemon: failed to set user environment".
-	: ${arkictrl_pidfile:="/var/run/${name}/${name}.pid"}
-	: ${arkictrl_logfile:="/var/run/${name}/${name}.log"}
+	: ${omdrcctrl_pidfile:="/var/run/${name}/${name}.pid"}
+	: ${omdrcctrl_logfile:="/var/run/${name}/${name}.log"}
 else
-	# Started as an unprivileged user (e.g. service arkictrl onestart): there
+	# Started as an unprivileged user (e.g. service omdrcctrl onestart): there
 	# is nothing to drop to, so clear ${name}_user (otherwise rc.subr would
 	# su to it and prompt for a password) and use writable paths.
-	unset arkictrl_user
-	: ${arkictrl_pidfile:="${TMPDIR:-/tmp}/${name}-$(id -un).pid"}
-	: ${arkictrl_logfile:="${TMPDIR:-/tmp}/${name}-$(id -un).log"}
+	unset omdrcctrl_user
+	: ${omdrcctrl_pidfile:="${TMPDIR:-/tmp}/${name}-$(id -un).pid"}
+	: ${omdrcctrl_logfile:="${TMPDIR:-/tmp}/${name}-$(id -un).log"}
 fi
 
-pidfile="${arkictrl_pidfile}"
-command_args="-f -o ${arkictrl_logfile} -P ${pidfile} @CMAKE_INSTALL_PREFIX@/bin/arkictrl"
+pidfile="${omdrcctrl_pidfile}"
+command_args="-f -o ${omdrcctrl_logfile} -P ${pidfile} @CMAKE_INSTALL_PREFIX@/bin/omdrcctrl"
 
-start_precmd="arkictrl_precmd"
+start_precmd="omdrcctrl_precmd"
 
-arkictrl_precmd()
+omdrcctrl_precmd()
 {
 	# Ensure the pidfile/logfile directory exists and is writable by the user
 	# the daemon runs as (it writes them after rc.subr drops privileges).
 	# This runs as root, before the su(1) switch.
-	for d in "${arkictrl_pidfile%/*}" "${arkictrl_logfile%/*}"; do
-		if [ -n "${arkictrl_user}" ]; then
-			/usr/bin/install -d -o "${arkictrl_user}" -m 0755 "${d}"
+	for d in "${omdrcctrl_pidfile%/*}" "${omdrcctrl_logfile%/*}"; do
+		if [ -n "${omdrcctrl_user}" ]; then
+			/usr/bin/install -d -o "${omdrcctrl_user}" -m 0755 "${d}"
 		else
 			/usr/bin/install -d -m 0755 "${d}"
 		fi

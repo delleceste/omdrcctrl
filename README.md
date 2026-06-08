@@ -1,4 +1,4 @@
-# arkictrl
+# omdrcctrl
 
 A lightweight web-based remote control panel for a Linux or FreeBSD desktop.
 Commands are defined in a plain-text INI config file; the server renders a
@@ -60,14 +60,14 @@ provides no feedback. Every command here either shows its output directly
 ## Project layout
 
 ```
-arkictrl/
+omdrcctrl/
 ├── CMakeLists.txt
 ├── README.md
 ├── requirements.txt
 ├── src/
 │   ├── app.py               # Flask application
 │   ├── commands.conf        # command definitions (edit this)
-│   ├── arkictrl.sh.in       # launcher script template
+│   ├── omdrcctrl.sh.in       # launcher script template
 │   ├── templates/
 │   │   ├── index.html            # Jinja2 + vanilla-JS control panel
 │   │   ├── details.html          # markdown details page
@@ -75,10 +75,10 @@ arkictrl/
 │   └── static/
 │       └── chart.umd.min.js # vendored Chart.js (filter-response charts)
 ├── rc.d/
-│   └── arkictrl.in          # FreeBSD rc.d script template
+│   └── omdrcctrl.in          # FreeBSD rc.d script template
 └── systemd/
-    ├── arkictrl.service.in       # Linux system service template
-    └── arkictrl-user.service.in  # Linux user service template
+    ├── omdrcctrl.service.in       # Linux system service template
+    └── omdrcctrl-user.service.in  # Linux user service template
 ```
 
 ---
@@ -102,7 +102,7 @@ cmake .. -DUSER_INSTALL=ON
 cmake .. -DUSER_INSTALL=ON -DCMAKE_INSTALL_PREFIX=~/.local
 
 # system services run as the configuring user by default; override if needed
-cmake .. -DARKICTRL_SERVICE_USER=myuser
+cmake .. -DOMDRCCTRL_SERVICE_USER=myuser
 
 # 3. install
 sudo cmake --install .        # system install
@@ -117,37 +117,37 @@ available there.
 
 | Path | Contents |
 |---|---|
-| `/usr/local/bin/arkictrl` | launcher shell script |
-| `/usr/local/lib/arkictrl/app.py` | Flask application |
-| `/usr/local/lib/arkictrl/README.md` | this file (served at `/readme`) |
-| `/usr/local/lib/arkictrl/templates/` | HTML templates |
-| `/usr/local/lib/arkictrl/static/` | vendored Chart.js |
-| `/usr/local/etc/arkictrl/commands.conf` | command definitions |
-| `/usr/local/lib/systemd/system/arkictrl.service` | systemd system unit |
+| `/usr/local/bin/omdrcctrl` | launcher shell script |
+| `/usr/local/lib/omdrcctrl/app.py` | Flask application |
+| `/usr/local/lib/omdrcctrl/README.md` | this file (served at `/readme`) |
+| `/usr/local/lib/omdrcctrl/templates/` | HTML templates |
+| `/usr/local/lib/omdrcctrl/static/` | vendored Chart.js |
+| `/usr/local/etc/omdrcctrl/commands.conf` | command definitions |
+| `/usr/local/lib/systemd/system/omdrcctrl.service` | systemd system unit |
 
 ### Linux user install paths (prefix `~/.local`)
 
 | Path | Contents |
 |---|---|
-| `~/.local/bin/arkictrl` | launcher shell script |
-| `~/.local/lib/arkictrl/app.py` | Flask application |
-| `~/.local/lib/arkictrl/README.md` | this file (served at `/readme`) |
-| `~/.local/lib/arkictrl/templates/` | HTML templates |
-| `~/.local/lib/arkictrl/static/` | vendored Chart.js |
-| `~/.local/etc/arkictrl/commands.conf` | command definitions |
-| `~/.local/share/systemd/user/arkictrl.service` | systemd user unit |
+| `~/.local/bin/omdrcctrl` | launcher shell script |
+| `~/.local/lib/omdrcctrl/app.py` | Flask application |
+| `~/.local/lib/omdrcctrl/README.md` | this file (served at `/readme`) |
+| `~/.local/lib/omdrcctrl/templates/` | HTML templates |
+| `~/.local/lib/omdrcctrl/static/` | vendored Chart.js |
+| `~/.local/etc/omdrcctrl/commands.conf` | command definitions |
+| `~/.local/share/systemd/user/omdrcctrl.service` | systemd user unit |
 
 ### FreeBSD system install paths (prefix `/usr/local`)
 
 | Path | Contents |
 |---|---|
-| `/usr/local/bin/arkictrl` | launcher shell script |
-| `/usr/local/lib/arkictrl/app.py` | Flask application |
-| `/usr/local/lib/arkictrl/README.md` | this file (served at `/readme`) |
-| `/usr/local/lib/arkictrl/templates/` | HTML templates |
-| `/usr/local/lib/arkictrl/static/` | vendored Chart.js |
-| `/usr/local/etc/arkictrl/commands.conf` | command definitions |
-| `/usr/local/etc/rc.d/arkictrl` | FreeBSD rc.d service script |
+| `/usr/local/bin/omdrcctrl` | launcher shell script |
+| `/usr/local/lib/omdrcctrl/app.py` | Flask application |
+| `/usr/local/lib/omdrcctrl/README.md` | this file (served at `/readme`) |
+| `/usr/local/lib/omdrcctrl/templates/` | HTML templates |
+| `/usr/local/lib/omdrcctrl/static/` | vendored Chart.js |
+| `/usr/local/etc/omdrcctrl/commands.conf` | command definitions |
+| `/usr/local/etc/rc.d/omdrcctrl` | FreeBSD rc.d service script |
 
 ---
 
@@ -155,17 +155,17 @@ available there.
 
 ### Linux systemd system service
 
-The service runs as `ARKICTRL_SERVICE_USER`, which defaults to the user that
+The service runs as `OMDRCCTRL_SERVICE_USER`, which defaults to the user that
 configured the CMake build. Override it during configure when needed:
 
 ```bash
-cmake .. -DARKICTRL_SERVICE_USER=myuser
+cmake .. -DOMDRCCTRL_SERVICE_USER=myuser
 ```
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now arkictrl
-sudo systemctl status arkictrl
+sudo systemctl enable --now omdrcctrl
+sudo systemctl status omdrcctrl
 ```
 
 ### Linux systemd user service (`-DUSER_INSTALL=ON`)
@@ -174,8 +174,8 @@ No root required. The service runs as your own user automatically.
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now arkictrl
-systemctl --user status arkictrl
+systemctl --user enable --now omdrcctrl
+systemctl --user status omdrcctrl
 ```
 
 To keep the service running after logout (e.g. on a headless machine), enable linger once:
@@ -187,38 +187,38 @@ loginctl enable-linger $USER
 ### Restarting after config changes
 
 ```bash
-sudo systemctl restart arkictrl          # system
-systemctl --user restart arkictrl        # user
+sudo systemctl restart omdrcctrl          # system
+systemctl --user restart omdrcctrl        # user
 ```
 
 ### FreeBSD rc.d service
 
 The rc.d script uses `daemon(8)` and is installed to
-`/usr/local/etc/rc.d/arkictrl`.
+`/usr/local/etc/rc.d/omdrcctrl`.
 
 ```bash
-sudo sysrc arkictrl_enable=YES
-sudo service arkictrl start
-sudo service arkictrl status
+sudo sysrc omdrcctrl_enable=YES
+sudo service omdrcctrl start
+sudo service omdrcctrl status
 ```
 
-The service user defaults to `ARKICTRL_SERVICE_USER`, which is set when CMake is
+The service user defaults to `OMDRCCTRL_SERVICE_USER`, which is set when CMake is
 configured. The following rc.conf variables can be overridden with `sysrc`:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `arkictrl_user` | `ARKICTRL_SERVICE_USER` (set at CMake time) | User the daemon runs as. rc.subr drops privileges to this user via `su(1)` when started as root. |
-| `arkictrl_env` | `PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin DISPLAY=:0` | Environment applied via `env(1)`. Includes `/usr/local/{s,}bin` on `PATH` (rc starts with a minimal `PATH`) and `DISPLAY` for X11 access. |
-| `arkictrl_pidfile` | `/var/run/arkictrl/arkictrl.pid` (root) or `${TMPDIR:-/tmp}/arkictrl-<user>.pid` (unprivileged) | Location of the pidfile. See note below. |
-| `arkictrl_logfile` | `/var/run/arkictrl/arkictrl.log` (root) or `${TMPDIR:-/tmp}/arkictrl-<user>.log` (unprivileged) | Captures the app's stdout/stderr (`daemon -o`); check here if the service starts but no process runs. |
+| `omdrcctrl_user` | `OMDRCCTRL_SERVICE_USER` (set at CMake time) | User the daemon runs as. rc.subr drops privileges to this user via `su(1)` when started as root. |
+| `omdrcctrl_env` | `PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin DISPLAY=:0` | Environment applied via `env(1)`. Includes `/usr/local/{s,}bin` on `PATH` (rc starts with a minimal `PATH`) and `DISPLAY` for X11 access. |
+| `omdrcctrl_pidfile` | `/var/run/omdrcctrl/omdrcctrl.pid` (root) or `${TMPDIR:-/tmp}/omdrcctrl-<user>.pid` (unprivileged) | Location of the pidfile. See note below. |
+| `omdrcctrl_logfile` | `/var/run/omdrcctrl/omdrcctrl.log` (root) or `${TMPDIR:-/tmp}/omdrcctrl-<user>.log` (unprivileged) | Captures the app's stdout/stderr (`daemon -o`); check here if the service starts but no process runs. |
 
 ```bash
-sudo sysrc arkictrl_user=myuser
-sudo sysrc arkictrl_env='PATH=/usr/local/bin:/usr/bin:/bin DISPLAY=:0'
-sudo sysrc arkictrl_pidfile=/var/run/arkictrl/arkictrl.pid
+sudo sysrc omdrcctrl_user=myuser
+sudo sysrc omdrcctrl_env='PATH=/usr/local/bin:/usr/bin:/bin DISPLAY=:0'
+sudo sysrc omdrcctrl_pidfile=/var/run/omdrcctrl/omdrcctrl.pid
 ```
 
-> **Privilege dropping:** `arkictrl_user` and `arkictrl_env` are the standard
+> **Privilege dropping:** `omdrcctrl_user` and `omdrcctrl_env` are the standard
 > rc.subr `${name}_user` / `${name}_env` variables — rc.subr drops privileges
 > with `su(1)` and applies the environment with `env(1)`. The script does **not**
 > pass `daemon -u`; combining `${name}_user` with `daemon -u` runs
@@ -226,28 +226,28 @@ sudo sysrc arkictrl_pidfile=/var/run/arkictrl/arkictrl.pid
 > *"daemon: failed to set user environment"*.
 
 > **Why the pidfile lives in a subdirectory:** the daemon writes its `-p`
-> pidfile (and `-o` logfile) *after* rc.subr drops to `arkictrl_user`, so their
+> pidfile (and `-o` logfile) *after* rc.subr drops to `omdrcctrl_user`, so their
 > directory must be writable by that user. `/var/run` itself is root-only, which
-> is why a plain `/var/run/arkictrl.pid` fails with *permission denied* even
+> is why a plain `/var/run/omdrcctrl.pid` fails with *permission denied* even
 > under `sudo`. The script's `start_precmd` (which runs as root) creates
-> `/var/run/arkictrl` owned by `arkictrl_user` so the unprivileged daemon can
+> `/var/run/omdrcctrl` owned by `omdrcctrl_user` so the unprivileged daemon can
 > write there.
 
 #### Running without root
 
-When started by an unprivileged user the script clears `arkictrl_user` (so
+When started by an unprivileged user the script clears `omdrcctrl_user` (so
 rc.subr does not try to `su` and prompt for a password) and defaults the
-pidfile/logfile to `${TMPDIR:-/tmp}/arkictrl-<user>.*`. Use `onestart` to bypass
-the `arkictrl_enable` rcvar check:
+pidfile/logfile to `${TMPDIR:-/tmp}/omdrcctrl-<user>.*`. Use `onestart` to bypass
+the `omdrcctrl_enable` rcvar check:
 
 ```bash
-/usr/local/etc/rc.d/arkictrl onestart
+/usr/local/etc/rc.d/omdrcctrl onestart
 ```
 
 Restart after config changes:
 
 ```bash
-sudo service arkictrl restart
+sudo service omdrcctrl restart
 ```
 
 ---

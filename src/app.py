@@ -808,7 +808,7 @@ def readme_page():
     if text is None:
         return "README not found", 404
     html = md_lib.markdown(text, extensions=["tables", "fenced_code", "extra"])
-    return render_template("details.html", title="arkictrl — README", content=html)
+    return render_template("details.html", title="omdrcctrl — README", content=html)
 
 
 # ── API routes ────────────────────────────────────────────────────────────────
@@ -823,7 +823,7 @@ def run_command(cmd_id):
 
     log = tempfile.NamedTemporaryFile(
         mode="w+b",
-        prefix=f"arkictrl-{cmd_id}-",
+        prefix=f"omdrcctrl-{cmd_id}-",
         suffix=".log",
         delete=False,
     )
@@ -1257,7 +1257,7 @@ def status():
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Arki Control web interface")
+    parser = argparse.ArgumentParser(description="OMDRC Control web interface")
     parser.add_argument("--host",   default="0.0.0.0")
     parser.add_argument("--port",   type=int, default=8080)
     parser.add_argument("--config", default=os.path.join(_HERE, "commands.conf"))

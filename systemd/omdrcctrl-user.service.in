@@ -1,11 +1,11 @@
 [Unit]
-Description=Arki Control – web remote-control interface
+Description=OMDRC Control – web remote-control interface
 After=network.target
 
 [Service]
 Type=simple
 Environment=DISPLAY=:0
-ExecStart=@CMAKE_INSTALL_PREFIX@/bin/arkictrl
+ExecStart=@CMAKE_INSTALL_PREFIX@/bin/omdrcctrl
 Restart=on-failure
 RestartSec=5
 KillMode=process

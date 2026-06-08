@@ -1,18 +1,18 @@
 cmake_minimum_required(VERSION 3.16)
-project(arkictrl VERSION 1.0.0 LANGUAGES NONE)
+project(omdrcctrl VERSION 1.0.0 LANGUAGES NONE)
 
 # ── options ────────────────────────────────────────────────────────────────
 option(USER_INSTALL "Install as a systemd --user service on Linux (no root required)" OFF)
-set(ARKICTRL_SERVICE_USER "$ENV{USER}" CACHE STRING "User for the system service")
+set(OMDRCCTRL_SERVICE_USER "$ENV{USER}" CACHE STRING "User for the system service")
 
-if(NOT ARKICTRL_SERVICE_USER)
-    set(ARKICTRL_SERVICE_USER "nobody")
+if(NOT OMDRCCTRL_SERVICE_USER)
+    set(OMDRCCTRL_SERVICE_USER "nobody")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(ARKICTRL_SERVICE_MANAGER "systemd")
+    set(OMDRCCTRL_SERVICE_MANAGER "systemd")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-    set(ARKICTRL_SERVICE_MANAGER "rc.d")
+    set(OMDRCCTRL_SERVICE_MANAGER "rc.d")
     if(USER_INSTALL)
         message(FATAL_ERROR "USER_INSTALL is only supported on Linux with systemd --user services")
     endif()
@@ -38,29 +38,29 @@ endif()
 
 # ── configure files ────────────────────────────────────────────────────────
 configure_file(
-    src/arkictrl.sh.in
-    ${CMAKE_CURRENT_BINARY_DIR}/arkictrl
+    src/omdrcctrl.sh.in
+    ${CMAKE_CURRENT_BINARY_DIR}/omdrcctrl
     @ONLY
 )
 
-if(ARKICTRL_SERVICE_MANAGER STREQUAL "systemd")
+if(OMDRCCTRL_SERVICE_MANAGER STREQUAL "systemd")
     if(USER_INSTALL)
         configure_file(
-            systemd/arkictrl-user.service.in
-            ${CMAKE_CURRENT_BINARY_DIR}/arkictrl.service
+            systemd/omdrcctrl-user.service.in
+            ${CMAKE_CURRENT_BINARY_DIR}/omdrcctrl.service
             @ONLY
         )
     else()
         configure_file(
-            systemd/arkictrl.service.in
-            ${CMAKE_CURRENT_BINARY_DIR}/arkictrl.service
+            systemd/omdrcctrl.service.in
+            ${CMAKE_CURRENT_BINARY_DIR}/omdrcctrl.service
             @ONLY
         )
     endif()
-elseif(ARKICTRL_SERVICE_MANAGER STREQUAL "rc.d")
+elseif(OMDRCCTRL_SERVICE_MANAGER STREQUAL "rc.d")
     configure_file(
-        rc.d/arkictrl.in
-        ${CMAKE_CURRENT_BINARY_DIR}/arkictrl.rc
+        rc.d/omdrcctrl.in
+        ${CMAKE_CURRENT_BINARY_DIR}/omdrcctrl.rc
         @ONLY
     )
 endif()
@@ -69,81 +69,81 @@ endif()
 
 # Python application + docs + helper scripts
 install(FILES src/app.py README.md
-        DESTINATION lib/arkictrl)
+        DESTINATION lib/omdrcctrl)
 
 # Jinja2 templates
 install(DIRECTORY src/templates
-        DESTINATION lib/arkictrl)
+        DESTINATION lib/omdrcctrl)
 
 # Static assets (vendored Chart.js for the filter-response page)
 install(DIRECTORY src/static
-        DESTINATION lib/arkictrl)
+        DESTINATION lib/omdrcctrl)
 
 # Default config (only if not already present — preserve user edits)
 install(FILES src/commands.conf
-        DESTINATION etc/arkictrl
+        DESTINATION etc/omdrcctrl
         RENAME commands.conf)
 
 # Launcher script
-install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/arkictrl
+install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/omdrcctrl
         DESTINATION bin)
 
 # service integration
-if(ARKICTRL_SERVICE_MANAGER STREQUAL "systemd")
+if(OMDRCCTRL_SERVICE_MANAGER STREQUAL "systemd")
     if(USER_INSTALL)
-        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/arkictrl.service
+        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/omdrcctrl.service
                 DESTINATION share/systemd/user)
     else()
-        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/arkictrl.service
+        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/omdrcctrl.service
                 DESTINATION lib/systemd/system)
     endif()
-elseif(ARKICTRL_SERVICE_MANAGER STREQUAL "rc.d")
-    install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/arkictrl.rc
+elseif(OMDRCCTRL_SERVICE_MANAGER STREQUAL "rc.d")
+    install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/omdrcctrl.rc
             DESTINATION etc/rc.d
-            RENAME arkictrl)
+            RENAME omdrcctrl)
 endif()
 
 # ── post-install hints ─────────────────────────────────────────────────────
-if(ARKICTRL_SERVICE_MANAGER STREQUAL "systemd" AND USER_INSTALL)
+if(OMDRCCTRL_SERVICE_MANAGER STREQUAL "systemd" AND USER_INSTALL)
     install(CODE "
 message(STATUS \"\")
-message(STATUS \"arkictrl installed to ${CMAKE_INSTALL_PREFIX}\")
+message(STATUS \"omdrcctrl installed to ${CMAKE_INSTALL_PREFIX}\")
 message(STATUS \"\")
-message(STATUS \"Edit commands:  ${CMAKE_INSTALL_PREFIX}/etc/arkictrl/commands.conf\")
+message(STATUS \"Edit commands:  ${CMAKE_INSTALL_PREFIX}/etc/omdrcctrl/commands.conf\")
 message(STATUS \"\")
 message(STATUS \"Enable service (no sudo required):\")
 message(STATUS \"  systemctl --user daemon-reload\")
-message(STATUS \"  systemctl --user enable --now arkictrl\")
+message(STATUS \"  systemctl --user enable --now omdrcctrl\")
 message(STATUS \"\")
 message(STATUS \"Open in browser: http://<hostname>:8080\")
 ")
-elseif(ARKICTRL_SERVICE_MANAGER STREQUAL "systemd")
+elseif(OMDRCCTRL_SERVICE_MANAGER STREQUAL "systemd")
     install(CODE "
 message(STATUS \"\")
-message(STATUS \"arkictrl installed to ${CMAKE_INSTALL_PREFIX}\")
+message(STATUS \"omdrcctrl installed to ${CMAKE_INSTALL_PREFIX}\")
 message(STATUS \"\")
-message(STATUS \"Edit commands:  ${CMAKE_INSTALL_PREFIX}/etc/arkictrl/commands.conf\")
+message(STATUS \"Edit commands:  ${CMAKE_INSTALL_PREFIX}/etc/omdrcctrl/commands.conf\")
 message(STATUS \"\")
 message(STATUS \"Enable service:\")
 message(STATUS \"  sudo systemctl daemon-reload\")
-message(STATUS \"  sudo systemctl enable --now arkictrl\")
+message(STATUS \"  sudo systemctl enable --now omdrcctrl\")
 message(STATUS \"\")
 message(STATUS \"Open in browser: http://<hostname>:8080\")
 ")
-elseif(ARKICTRL_SERVICE_MANAGER STREQUAL "rc.d")
+elseif(OMDRCCTRL_SERVICE_MANAGER STREQUAL "rc.d")
     install(CODE "
 message(STATUS \"\")
-message(STATUS \"arkictrl installed to ${CMAKE_INSTALL_PREFIX}\")
+message(STATUS \"omdrcctrl installed to ${CMAKE_INSTALL_PREFIX}\")
 message(STATUS \"\")
-message(STATUS \"Edit commands:  ${CMAKE_INSTALL_PREFIX}/etc/arkictrl/commands.conf\")
+message(STATUS \"Edit commands:  ${CMAKE_INSTALL_PREFIX}/etc/omdrcctrl/commands.conf\")
 message(STATUS \"\")
 message(STATUS \"Enable service:\")
-message(STATUS \"  sudo sysrc arkictrl_enable=YES\")
-message(STATUS \"  sudo service arkictrl start\")
+message(STATUS \"  sudo sysrc omdrcctrl_enable=YES\")
+message(STATUS \"  sudo service omdrcctrl start\")
 message(STATUS \"\")
 message(STATUS \"Optional service settings:\")
-message(STATUS \"  sudo sysrc arkictrl_user=${ARKICTRL_SERVICE_USER}\")
-message(STATUS \"  sudo sysrc arkictrl_env=DISPLAY=:0\")
+message(STATUS \"  sudo sysrc omdrcctrl_user=${OMDRCCTRL_SERVICE_USER}\")
+message(STATUS \"  sudo sysrc omdrcctrl_env=DISPLAY=:0\")
 message(STATUS \"\")
 message(STATUS \"Open in browser: http://<hostname>:8080\")
 ")

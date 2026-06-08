@@ -1,0 +1,4 @@
+#!/bin/sh
+exec "@PYTHON3@" "@CMAKE_INSTALL_PREFIX@/lib/omdrcctrl/app.py" \
+    --config "@CMAKE_INSTALL_PREFIX@/etc/omdrcctrl/commands.conf" \
+    "$@"
