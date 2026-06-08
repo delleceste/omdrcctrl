@@ -189,7 +189,7 @@ def _hide_from_topcpu(row: dict) -> bool:
     name = _process_name(row["name"]).lower()
     if row["pid"] == "0":
         return True
-    if name in {"idle", "kernel", "ps"}:
+    if name in {"idle", "kernel", "ps", "pgrep"}:
         return True
     return name.startswith("[") and name.endswith("]")
 
@@ -1231,7 +1231,7 @@ def brutefir_cpu():
         procs = []
         total = 0.0
         for row in _ps_processes():
-            if _process_name(row["name"]) != "brutefir":
+            if "brutefir" not in _process_name(row["name"]).lower():
                 continue
             procs.append({"pid": row["pid"], "cpu": row["cpu"]})
             total += row["cpu"]

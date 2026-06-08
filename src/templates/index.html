@@ -432,16 +432,6 @@
     <div id="mpd-panel" style="padding:4px 0">
         <span style="color:var(--muted);font-style:italic">loading…</span>
     </div>
-    <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:4px;
-                display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:.75rem;color:var(--muted)">DRC status <span class="refresh-note">manual</span></span>
-        <button id="drc-refresh-btn"
-                onclick="fetchDrcStatus(this)"
-                style="background:none;border:none;color:var(--muted);cursor:pointer;
-                       font-size:.9rem;padding:0 2px;line-height:1"
-                title="Refresh DRC status">↻</button>
-    </div>
-    <div id="drc-status-rows"></div>
 </div>
 
 <!-- Command groups (all except system) -->
@@ -512,7 +502,7 @@
 <!-- Top CPU processes panel -->
 <div class="card">
     <div class="card-title title-row">
-        <span id="topcpu-title">Top CPU <span class="refresh-note" id="topcpu-refresh-label">refresh: {{ topcpu_interval }}s</span></span>
+        <span id="topcpu-title">Top CPU<span id="topcpu-threshold"></span> <span class="refresh-note" id="topcpu-refresh-label">refresh: {{ topcpu_interval }}s</span></span>
         <button class="btn-refresh" id="topcpu-refresh-btn" title="Refresh">↻</button>
     </div>
     <div id="topcpu-panel" style="padding:4px 0">
@@ -888,11 +878,10 @@ async function fetchMpdInfo() {
                    d.bit_depth ? 'var(--text)' : 'var(--muted)') +
             monRow('Channels', d.channels || 'unknown',
                    d.channels ? 'var(--text)' : 'var(--muted)') +
-            (d.is_linux
-                ? monRow('ALSA', d.alsa_rate ? d.alsa_rate + ' Hz' : 'not running',
-                         d.alsa_rate ? 'var(--text)' : 'var(--muted)')
-                : monRow('virtual_oss', d.virtual_oss_rate ? d.virtual_oss_rate + ' Hz' : 'not running',
-                         d.virtual_oss_rate ? 'var(--text)' : 'var(--muted)')) +
+            (!d.is_linux
+                ? monRow('virtual_oss', d.virtual_oss_rate ? d.virtual_oss_rate + ' Hz' : 'not running',
+                         d.virtual_oss_rate ? 'var(--text)' : 'var(--muted)')
+                : '') +
             // What the DAC is actually being fed right now (ALSA hw_params).
             (d.alsa
                 ? monRow('DAC feed',
@@ -937,33 +926,6 @@ async function fetchMpdInfo() {
         el.innerHTML = '<span style="color:var(--red)">network error</span>';
     }
 }
-
-// ── DRC status (inside MPD card, on-demand) ───────────────────────────────
-async function fetchDrcStatus(btn) {
-    const el  = document.getElementById('drc-status-rows');
-    const btn_ = btn || document.getElementById('drc-refresh-btn');
-    if (btn_) { btn_.disabled = true; btn_.textContent = '…'; }
-    try {
-        const d = await (await fetch('/drc/status')).json();
-        if (!d.ok || !d.rows.length) { el.innerHTML = ''; return; }
-        let html = '';
-        for (const row of d.rows) {
-            let color;
-            const v = row.value;
-            if (row.key === 'Rate')
-                color = v.includes('[match]') ? 'var(--green)' : v.includes('[MISMATCH]') ? 'var(--red)' : undefined;
-            else if (v.startsWith('not running'))
-                color = 'var(--muted)';
-            html += monRow(row.key, v, color);
-        }
-        el.innerHTML = html;
-    } catch {
-        el.innerHTML = '<span style="color:var(--red)">error</span>';
-    } finally {
-        if (btn_) { btn_.disabled = false; btn_.textContent = '↻'; }
-    }
-}
-fetchDrcStatus();
 
 // ── Audio devices panel ───────────────────────────────────────────────────
 async function fetchSndstat(btn) {
@@ -1024,11 +986,11 @@ fetchAdvancedInfo();
 // ── Top CPU processes panel ───────────────────────────────────────────────
 async function fetchTopCpu() {
     const el    = document.getElementById('topcpu-panel');
-    const title = document.getElementById('topcpu-title');
     try {
         const d = await (await fetch('/system/topcpu')).json();
         if (!d.ok) { el.innerHTML = `<span style="color:var(--red)">${escHtml(d.error||'error')}</span>`; return; }
-        title.innerHTML = `Top CPU (&gt; ${d.threshold}%) <span class="refresh-note">refresh: {{ topcpu_interval }}s</span>`;
+        const thEl = document.getElementById('topcpu-threshold');
+        if (thEl) thEl.textContent = ` (> ${d.threshold}%)`;
         if (d.procs.length === 0) {
             el.innerHTML = '<span style="color:var(--muted);font-style:italic">idle — nothing above threshold</span>';
             return;
