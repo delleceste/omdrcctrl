@@ -855,6 +855,21 @@ function monRow(label, value, valueColor) {
            `</div>`;
 }
 
+// Render a sample rate in Hz as the short "XXk" form (44100 -> 44.1k,
+// 88200 -> 88.2k, 96000 -> 96k, 192000 -> 192k).  Non-standard rates fall
+// back to "<n> Hz" so nothing is ever mislabelled.
+function fmtRate(hz) {
+    switch (Number(hz)) {
+        case 44100:  return '44.1k';
+        case 48000:  return '48k';
+        case 88200:  return '88.2k';
+        case 96000:  return '96k';
+        case 176400: return '176.4k';
+        case 192000: return '192k';
+        default:     return hz + ' Hz';
+    }
+}
+
 async function fetchMpdInfo() {
     const el = document.getElementById('mpd-panel');
     try {
@@ -872,14 +887,14 @@ async function fetchMpdInfo() {
         if (d.song) html += monRow('Song', d.song);
         if (d.audio) html += monRow('Audio', d.audio);
         html +=
-            monRow('MPD rate', d.sample_rate ? d.sample_rate + ' Hz' : 'unknown',
+            monRow('MPD rate', d.sample_rate ? fmtRate(d.sample_rate) : 'unknown',
                    d.sample_rate ? 'var(--text)' : 'var(--muted)') +
             monRow('Bit depth', d.bit_depth ? d.bit_depth + ' bit' : 'unknown',
                    d.bit_depth ? 'var(--text)' : 'var(--muted)') +
             monRow('Channels', d.channels || 'unknown',
                    d.channels ? 'var(--text)' : 'var(--muted)') +
             (!d.is_linux
-                ? monRow('virtual_oss', d.virtual_oss_rate ? d.virtual_oss_rate + ' Hz' : 'not running',
+                ? monRow('virtual_oss', d.virtual_oss_rate ? fmtRate(d.virtual_oss_rate) : 'not running',
                          d.virtual_oss_rate ? 'var(--text)' : 'var(--muted)')
                 : '') +
             // What the DAC is actually being fed right now (ALSA hw_params).
@@ -893,7 +908,7 @@ async function fetchMpdInfo() {
                                `${d.alsa.period_size} / ${d.alsa.buffer_size} frames`, 'var(--muted)')
                       : '')
                 : '') +
-            monRow('BruteFIR', d.brutefir_rate ? d.brutefir_rate + ' Hz' : 'not running',
+            monRow('BruteFIR', d.brutefir_rate ? fmtRate(d.brutefir_rate) : 'not running',
                    d.brutefir_rate ? 'var(--text)' : 'var(--muted)') +
             monRow('Rate', verdict.text, verdictColor) +
             monRow('Config', d.conf) +
