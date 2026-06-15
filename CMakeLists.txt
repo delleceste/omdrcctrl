@@ -4,9 +4,15 @@ project(omdrcctrl VERSION 1.0.0 LANGUAGES NONE)
 # ── options ────────────────────────────────────────────────────────────────
 option(USER_INSTALL "Install as a systemd --user service on Linux (no root required)" OFF)
 set(OMDRCCTRL_SERVICE_USER "$ENV{USER}" CACHE STRING "User for the system service")
+get_filename_component(_OMDRC_REPO_DIR_DEFAULT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+set(OMDRC_REPO_DIR "${_OMDRC_REPO_DIR_DEFAULT}" CACHE PATH "Path to the open-media-drc checkout used by the default commands.conf")
 
 if(NOT OMDRCCTRL_SERVICE_USER)
     set(OMDRCCTRL_SERVICE_USER "nobody")
+endif()
+
+if(NOT EXISTS "${OMDRC_REPO_DIR}/drc.sh")
+    message(WARNING "OMDRC_REPO_DIR does not contain drc.sh: ${OMDRC_REPO_DIR}")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -40,6 +46,12 @@ endif()
 configure_file(
     src/omdrcctrl.sh.in
     ${CMAKE_CURRENT_BINARY_DIR}/omdrcctrl
+    @ONLY
+)
+
+configure_file(
+    src/commands.conf.in
+    ${CMAKE_CURRENT_BINARY_DIR}/commands.conf
     @ONLY
 )
 
@@ -79,8 +91,8 @@ install(DIRECTORY src/templates
 install(DIRECTORY src/static
         DESTINATION lib/omdrcctrl)
 
-# Default config (only if not already present — preserve user edits)
-install(FILES src/commands.conf
+# Default config
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/commands.conf
         DESTINATION etc/omdrcctrl
         RENAME commands.conf)
 

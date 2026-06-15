@@ -147,7 +147,9 @@ def _env() -> dict:
 
 
 def _find_dyn_details(cmd: dict, config_name: str) -> str | None:
-    root = cmd.get("details_root", "/home/giacomo/DRC")
+    root = cmd.get("details_root")
+    if not root:
+        return None
     for fname in ("README.md", "INDEX.md"):
         path = os.path.join(root, config_name, fname)
         if os.path.isfile(path):

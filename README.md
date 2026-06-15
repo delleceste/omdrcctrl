@@ -66,7 +66,7 @@ omdrcctrl/
 ├── requirements.txt
 ├── src/
 │   ├── app.py               # Flask application
-│   ├── commands.conf        # command definitions (edit this)
+│   ├── commands.conf.in     # command definitions template
 │   ├── omdrcctrl.sh.in       # launcher script template
 │   ├── templates/
 │   │   ├── index.html            # Jinja2 + vanilla-JS control panel
@@ -104,6 +104,9 @@ cmake .. -DUSER_INSTALL=ON -DCMAKE_INSTALL_PREFIX=~/.local
 # system services run as the configuring user by default; override if needed
 cmake .. -DOMDRCCTRL_SERVICE_USER=myuser
 
+# default command paths point to the parent open-media-drc checkout; override if needed
+cmake .. -DOMDRC_REPO_DIR=/path/to/open-media-drc
+
 # 3. install
 sudo cmake --install .        # system install
 cmake --install .             # Linux user install (no sudo)
@@ -111,7 +114,9 @@ cmake --install .             # Linux user install (no sudo)
 
 On Linux, CMake installs systemd units. On FreeBSD, CMake installs an rc.d
 script and rejects `-DUSER_INSTALL=ON` because systemd user services are not
-available there.
+available there. The installed `commands.conf` is generated from
+`src/commands.conf.in`; `OMDRC_REPO_DIR` defaults to the parent directory, which
+matches the normal git-submodule layout inside `open-media-drc`.
 
 ### Linux system install paths (prefix `/usr/local`)
 
@@ -255,10 +260,10 @@ sudo service omdrcctrl restart
 ## Running manually (development)
 
 ```bash
-cd src
-python3 app.py                        # listens on 0.0.0.0:9090
-python3 app.py --port 8080            # different port
-python3 app.py --config /path/to/commands.conf
+cd build
+python3 ../src/app.py --config commands.conf        # listens on 0.0.0.0:9090
+python3 ../src/app.py --config commands.conf --port 8080
+python3 ../src/app.py --config /path/to/commands.conf
 ```
 
 Open `http://<hostname>:9090` in a browser.
@@ -267,8 +272,10 @@ Open `http://<hostname>:9090` in a browser.
 
 ## Configuring commands
 
-All commands are defined in `commands.conf` (INI format, parsed by Python's
-`configparser`). Lines starting with `#` are comments.
+All commands are defined in the installed `commands.conf` (INI format, parsed
+by Python's `configparser`). The default file is generated from
+`src/commands.conf.in` at CMake configure time. Lines starting with `#` are
+comments.
 
 Each `[section]` is one command. The section name is the internal id and must
 be unique and contain no spaces.
@@ -357,12 +364,12 @@ refresh      = 5
 cmd          = ps -C brutefir -o args= 2>/dev/null \
                | sed -n 's|.*brutefir-\([^ ]*\)\.conf.*|\1|p' \
                | grep . || echo off
-details_root = /home/giacomo/DRC
+details_root = /path/to/filter-docs
 ```
 
 When brutefir is running with `brutefir-120.blue+0dB.conf` the command
 outputs `120.blue+0dB`. The server then looks for
-`/home/giacomo/DRC/120.blue+0dB/README.md`. If found, the Details button
+`/path/to/filter-docs/120.blue+0dB/README.md`. If found, the Details button
 appears and opens that file rendered as HTML.
 
 Markdown files may use **relative paths** for images and links; they are served
@@ -370,7 +377,7 @@ from the same directory as the `.md` file via
 `/details-dyn-asset/<id>/<config>/<path>`. Example layout:
 
 ```
-/home/giacomo/DRC/
+/path/to/filter-docs/
 ├── 120.blue+0dB/
 │   ├── README.md
 │   └── img/

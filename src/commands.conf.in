@@ -3,33 +3,33 @@
 # Each [section] defines one command.  Section name = command id (no spaces).
 #
 # Required keys (all commands):
-#   what   – label shown next to the widget
-#   group  – card section name (drc | apps | system | any custom name)
-#   type   – READ | WRITE | LINK
-#   cmd    – shell command to execute (READ and WRITE only)
+#   what   - label shown next to the widget
+#   group  - card section name (drc | apps | system | any custom name)
+#   type   - READ | WRITE | LINK
+#   cmd    - shell command to execute (READ and WRITE only)
 #
 # WRITE-only keys:
-#   button  – button label text (e.g. Apply, Launch, Reboot)
-#   confirm – yes | no  (show confirmation dialog before running; default no)
+#   button  - button label text (e.g. Apply, Launch, Reboot)
+#   confirm - yes | no  (show confirmation dialog before running; default no)
 #
 # READ-only keys:
-#   refresh      – auto-refresh interval in seconds (omit or 0 = manual only)
-#   details_root – root dir for dynamic details lookup ({root}/{output}/README.md)
+#   refresh      - auto-refresh interval in seconds (omit or 0 = manual only)
+#   details_root - root dir for dynamic details lookup ({root}/{output}/README.md)
 #
 # LINK-only keys:
-#   url – URL to open in a new tab (e.g. http://192.168.1.1/)
+#   url - URL to open in a new tab (e.g. http://192.168.1.1/)
 #
 # Optional keys (READ or WRITE):
-#   process – process name checked with pgrep -x; Details button appears when
+#   process - process name checked with pgrep -x; Details button appears when
 #             the process is running. Use this instead of 'unit' when the
 #             process is not managed by systemd or to avoid any systemd side
 #             effects.
-#   unit    – systemctl unit name; when 'systemctl is-active <unit>' succeeds
+#   unit    - systemctl unit name; when 'systemctl is-active <unit>' succeeds
 #             a Details button appears. Prefer 'process' when possible.
-#   details – absolute path to a Markdown (.md) file rendered on the details
+#   details - absolute path to a Markdown (.md) file rendered on the details
 #             page; images may use paths relative to the .md file's directory
 #   (one of 'process' or 'unit' must be present together with 'details')
-#   details_link – external URL for a static always-visible Details button (overrides
+#   details_link - external URL for a static always-visible Details button (overrides
 #                 the conditional process/unit-based Details button)
 #
 # Example READ command (uncomment and adapt):
@@ -39,8 +39,14 @@
 # type    = READ
 # refresh = 10
 # cmd     = sensors | awk '/Core 0/{print $3}'
+#
+# This file is rendered by CMake.  OMDRC_REPO_DIR defaults to the parent
+# open-media-drc checkout when omdrcctrl is used as this repository's submodule,
+# and can be overridden at configure time:
+#
+#   cmake -B build -DOMDRC_REPO_DIR=/path/to/open-media-drc
 
-# ── Monitor settings ───────────────────────────────────────────────────────
+# -- Monitor settings -------------------------------------------------------
 # Settings for the MPD and top-CPU monitoring panels.
 [monitor]
 # Processes with %CPU below this threshold are omitted from the top-CPU list.
@@ -54,7 +60,7 @@ sndstat_interval = 5
 # Refresh interval in seconds for the BruteFIR CPU panel.
 brutefir_interval = 5
 
-# ── Qobuz Connect integration ──────────────────────────────────────────────
+# -- Qobuz Connect integration ---------------------------------------------
 # Paths to the files written by qobuzconnect2mpd.  Change these if you use
 # non-default paths (qconnectstatusfile / qconnectlogfile in its config).
 [qconnect]
@@ -66,22 +72,22 @@ what    = Active config
 group   = drc
 type    = READ
 refresh = 5
-cmd     = /home/giacomo/DRC/brutefir-conf/drc-status.sh
+cmd     = @OMDRC_REPO_DIR@/drc-status.sh
 
 [drc_off]
 what    = No DRC
 group   = drc
 type    = WRITE
 button  = Apply
-cmd     = /home/giacomo/DRC/brutefir-conf/drc.sh off
+cmd     = @OMDRC_REPO_DIR@/drc.sh off
 process = brutefir
 
 [drc_resamp]
-what    = DRC Flat (0 dB) — auto resample
+what    = DRC Flat (0 dB) - auto resample
 group   = drc
 type    = WRITE
 button  = Apply
-cmd     = /home/giacomo/DRC/brutefir-conf/drc.sh resamp
+cmd     = @OMDRC_REPO_DIR@/drc.sh resamp
 process = brutefir
 details_link = https://github.com/delleceste/DRC-120.blue/tree/master/README.md
 
@@ -90,7 +96,7 @@ what    = DRC 192 kHz
 group   = drc
 type    = WRITE
 button  = Apply
-cmd     = /home/giacomo/DRC/brutefir-conf/drc.sh 192000
+cmd     = @OMDRC_REPO_DIR@/drc.sh 192000
 process = brutefir
 
 [drc_96000]
@@ -98,7 +104,7 @@ what    = DRC 96 kHz
 group   = drc
 type    = WRITE
 button  = Apply
-cmd     = /home/giacomo/DRC/brutefir-conf/drc.sh 96000
+cmd     = @OMDRC_REPO_DIR@/drc.sh 96000
 process = brutefir
 
 [drc_88200]
@@ -106,7 +112,7 @@ what    = DRC 88.2 kHz
 group   = drc
 type    = WRITE
 button  = Apply
-cmd     = /home/giacomo/DRC/brutefir-conf/drc.sh 88200
+cmd     = @OMDRC_REPO_DIR@/drc.sh 88200
 process = brutefir
 
 [drc_48000]
@@ -114,7 +120,7 @@ what    = DRC 48 kHz
 group   = drc
 type    = WRITE
 button  = Apply
-cmd     = /home/giacomo/DRC/brutefir-conf/drc.sh 48000
+cmd     = @OMDRC_REPO_DIR@/drc.sh 48000
 process = brutefir
 
 [drc_44100]
@@ -122,7 +128,7 @@ what    = DRC 44.1 kHz
 group   = drc
 type    = WRITE
 button  = Apply
-cmd     = /home/giacomo/DRC/brutefir-conf/drc.sh 44100
+cmd     = @OMDRC_REPO_DIR@/drc.sh 44100
 process = brutefir
 
 [drc_192000_2dB]
@@ -130,7 +136,7 @@ what    = DRC +2 dB / 192 kHz
 group   = drc
 type    = WRITE
 button  = Apply
-cmd     = /home/giacomo/DRC/brutefir-conf/drc.sh 192000 +2dB
+cmd     = @OMDRC_REPO_DIR@/drc.sh 192000 +2dB
 process = brutefir
 
 [chrome]
