@@ -1259,7 +1259,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="OMDRC Control web interface")
     parser.add_argument("--host",   default="0.0.0.0")
-    parser.add_argument("--port",   type=int, default=8080)
+    parser.add_argument("--port",   type=int, default=9090)
     parser.add_argument("--config", default=os.path.join(_HERE, "commands.conf"))
     args = parser.parse_args()
     load_config(args.config)

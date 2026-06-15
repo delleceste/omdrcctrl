@@ -256,12 +256,12 @@ sudo service omdrcctrl restart
 
 ```bash
 cd src
-python3 app.py                        # listens on 0.0.0.0:8080
-python3 app.py --port 9090            # different port
+python3 app.py                        # listens on 0.0.0.0:9090
+python3 app.py --port 8080            # different port
 python3 app.py --config /path/to/commands.conf
 ```
 
-Open `http://<hostname>:8080` in a browser.
+Open `http://<hostname>:9090` in a browser.
 
 ---
 
