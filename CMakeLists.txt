@@ -49,6 +49,9 @@ configure_file(
     @ONLY
 )
 
+message(STATUS "Rendering commands.conf from src/commands.conf.in")
+message(STATUS "  replacing @OMDRC_REPO_DIR@ with ${OMDRC_REPO_DIR}")
+message(STATUS "  output: ${CMAKE_CURRENT_BINARY_DIR}/commands.conf")
 configure_file(
     src/commands.conf.in
     ${CMAKE_CURRENT_BINARY_DIR}/commands.conf
