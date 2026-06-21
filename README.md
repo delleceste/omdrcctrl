@@ -548,13 +548,50 @@ Returns the full content of the qobuzconnect2mpd log file as a string.
 
 ### `POST /qconnect/restart`
 
-Restarts the qobuzconnect2mpd user service via
-`systemctl --user restart qobuzconnect2mpd`. This endpoint is Linux/systemd
-specific; on FreeBSD, use regular command widgets for service actions.
+Restarts qobuzconnect2mpd via `sudo service qobuzconnect2mpd onestop` followed
+by `onestart`. Enabled in the web UI only while qobuzconnect2mpd is the active
+renderer.
 
 ```json
 { "ok": true }
 { "ok": false, "error": "..." }
+```
+
+---
+
+### `GET /qconnect/services`
+
+Returns the running state of the two mutually-exclusive renderers, polled by the
+web UI to keep the toggle in sync with reality (`service <name> onestatus`).
+
+```json
+{ "ok": true, "qobuzconnect2mpd": true, "upmpdcli": false }
+```
+
+---
+
+### `POST /qconnect/switch`
+
+Switches the active renderer. qobuzconnect2mpd and upmpdcli must never run at the
+same time, so the currently-running service is stopped first, MPD playback is
+stopped and its queue cleared (`mpc stop` / `mpc clear`), then the target is
+started — all via `sudo service <name> onestart|onestop`.
+
+```json
+// request
+{ "target": "upmpdcli" }
+// response
+{ "ok": true, "active": "upmpdcli" }
+{ "ok": false, "error": "..." }
+```
+
+The service user must be able to run, password-free, the relevant commands —
+for example in `sudoers`:
+
+```
+omdrcctrl ALL=(root) NOPASSWD: /usr/sbin/service qobuzconnect2mpd onestart, \
+    /usr/sbin/service qobuzconnect2mpd onestop, \
+    /usr/sbin/service upmpdcli onestart, /usr/sbin/service upmpdcli onestop
 ```
 
 ---

@@ -265,6 +265,40 @@
             border-color: var(--accent);
             color: var(--accent);
         }
+        .btn-log:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+            border-color: var(--border);
+            color: var(--muted);
+        }
+        /* ── renderer toggle (qobuzconnect2mpd ⇄ upmpdcli) ───── */
+        .qc-switch {
+            display: flex;
+            gap: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .qc-seg {
+            flex: 1;
+            padding: 9px 8px;
+            font-size: .8rem;
+            font-weight: 600;
+            font-family: ui-monospace, "SFMono-Regular", monospace;
+            background: var(--bg);
+            color: var(--muted);
+            border: none;
+            cursor: pointer;
+            transition: background .15s, color .15s;
+        }
+        .qc-seg + .qc-seg { border-left: 1px solid var(--border); }
+        .qc-seg:hover:not(.active) { color: var(--text); }
+        .qc-seg.active {
+            background: var(--accent);
+            color: #fff;
+        }
+        .qc-switch.busy { opacity: .55; pointer-events: none; }
         #qc-line1 {
             font-size: .95rem;
             font-weight: 500;
@@ -404,25 +438,6 @@
 </div>
 {% endmacro %}
 
-<!-- Qobuz Connect now-playing panel (top) -->
-<div class="card">
-    <div class="card-title qc-card-title">
-        <span>Qobuz Connect <span class="refresh-note" id="qc-refresh-label">refresh: 1s</span></span>
-        <div class="title-actions">
-            <button class="btn-refresh" id="qc-refresh-btn" title="Refresh">↻</button>
-            <button class="btn-log" id="btn-restart" onclick="restartQc()">Restart</button>
-            <button class="btn-log" id="btn-log" onclick="toggleLog()">Log</button>
-        </div>
-    </div>
-    <div style="padding:12px 0">
-        <div id="qc-line1" class="idle">—</div>
-        <div id="qc-line2"></div>
-    </div>
-    <div id="qconnect-log-panel" style="display:none">
-        <pre id="qc-log-content" class="qc-log"></pre>
-    </div>
-</div>
-
 <!-- MPD info panel -->
 <div class="card">
     <div class="card-title title-row">
@@ -514,6 +529,30 @@
 {% for group_name, group_label, cmds in groups if group_name == 'system' %}
 {{ render_group(group_name, group_label, cmds) }}
 {% endfor %}
+
+<!-- Qobuz Connect / upmpdcli renderer panel (bottom) -->
+<div class="card">
+    <div class="card-title qc-card-title">
+        <span>Renderer <span class="refresh-note" id="qc-refresh-label">refresh: 1s</span></span>
+        <div class="title-actions">
+            <button class="btn-refresh" id="qc-refresh-btn" title="Refresh">↻</button>
+            <button class="btn-log" id="btn-restart" onclick="restartQc()" disabled>Restart</button>
+            <button class="btn-log" id="btn-log" onclick="toggleLog()">Log</button>
+        </div>
+    </div>
+    <!-- Mutually-exclusive renderer toggle -->
+    <div class="qc-switch" id="qc-switch">
+        <button class="qc-seg" data-target="qobuzconnect2mpd" onclick="switchRenderer('qobuzconnect2mpd')">qobuzconnect2mpd</button>
+        <button class="qc-seg" data-target="upmpdcli" onclick="switchRenderer('upmpdcli')">upmpdcli</button>
+    </div>
+    <div style="padding:12px 0">
+        <div id="qc-line1" class="idle">—</div>
+        <div id="qc-line2"></div>
+    </div>
+    <div id="qconnect-log-panel" style="display:none">
+        <pre id="qc-log-content" class="qc-log"></pre>
+    </div>
+</div>
 
 <footer><a href="/readme">README</a></footer>
 
@@ -792,8 +831,12 @@ function toggleLog() {
     }
 }
 
+let qcRestarting = false;
+
 async function restartQc() {
     const btn = document.getElementById('btn-restart');
+    if (btn.disabled) return;
+    qcRestarting = true;
     btn.disabled = true;
     btn.textContent = '…';
     try {
@@ -807,9 +850,65 @@ async function restartQc() {
         toast('network error', 'error');
     }
     setTimeout(() => {
-        btn.disabled = false;
+        qcRestarting = false;
         btn.textContent = 'Restart';
+        syncRenderers();   // re-evaluate enabled state from live status
     }, 2000);
+}
+
+// ── Renderer toggle (qobuzconnect2mpd ⇄ upmpdcli) ──────────────────────────
+// The two services are mutually exclusive; the toggle reflects which one is
+// actually running and switching stops the active one before starting the
+// other.  Status is polled on a slow cadence to keep the UI in sync.
+let qcSwitching   = false;
+let activeRenderer = null;
+
+function paintRenderers(active) {
+    activeRenderer = active;
+    document.querySelectorAll('#qc-switch .qc-seg').forEach(seg => {
+        seg.classList.toggle('active', seg.dataset.target === active);
+    });
+    // Restart button is meaningful only for qobuzconnect2mpd.
+    const btn = document.getElementById('btn-restart');
+    if (!qcRestarting) {
+        btn.disabled = active !== 'qobuzconnect2mpd';
+    }
+}
+
+async function syncRenderers() {
+    if (qcSwitching) return;
+    try {
+        const d = await (await fetch('/qconnect/services')).json();
+        let active = null;
+        if (d.qobuzconnect2mpd) active = 'qobuzconnect2mpd';
+        else if (d.upmpdcli)    active = 'upmpdcli';
+        paintRenderers(active);
+    } catch { /* ignore — status dot already signals offline */ }
+}
+
+async function switchRenderer(target) {
+    if (qcSwitching || target === activeRenderer) return;
+    qcSwitching = true;
+    const sw = document.getElementById('qc-switch');
+    sw.classList.add('busy');
+    paintRenderers(target);   // optimistic
+    try {
+        const d = await (await fetch('/qconnect/switch', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ target }),
+        })).json();
+        if (d.ok) {
+            toast(`switched to ${target}`, 'ok');
+        } else {
+            toast(d.error || 'switch failed', 'error');
+        }
+    } catch {
+        toast('network error', 'error');
+    }
+    qcSwitching = false;
+    sw.classList.remove('busy');
+    syncRenderers();   // reconcile with reality
 }
 
 // ── Brutefir CPU panel ─────────────────────────────────────────────────────
@@ -1056,6 +1155,9 @@ async function fetchRam() {
     }
 }
 startAutoRefresh('qc', 1000, fetchQcStatus);
+// Keep the renderer toggle in sync with actual service status on a slow cadence.
+syncRenderers();
+setInterval(syncRenderers, 7000);
 startAutoRefresh('bf', BRUTEFIR_INTERVAL_MS, fetchBrutefirCpu);
 startAutoRefresh('mpd', MONITOR_INTERVAL_MS, fetchMpdInfo);
 startAutoRefresh('sndstat', SNDSTAT_INTERVAL_MS, fetchSndstat);

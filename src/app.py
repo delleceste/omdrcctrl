@@ -12,7 +12,7 @@ import threading
 import time
 import tempfile
 import markdown as md_lib
-from flask import Flask, render_template, jsonify, send_from_directory
+from flask import Flask, render_template, jsonify, request, send_from_directory
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -55,6 +55,13 @@ app = Flask(__name__, template_folder=os.path.join(_HERE, "templates"))
 # Set by [qconnect] section in commands.conf; env vars are the fallback.
 QCONNECT_STATUS_FILE = os.environ.get("QCONNECT_STATUS_FILE", "/tmp/qconnect2mpd-status.txt")
 QCONNECT_LOG_FILE    = os.environ.get("QCONNECT_LOG_FILE",    "/tmp/qconnect2mpd.log")
+
+# qobuzconnect2mpd and upmpdcli are mutually exclusive renderers driving MPD;
+# only one may run at a time.  They are switched via `sudo service <name>
+# onestart|onestop` and their state is polled with `service <name> onestatus`.
+QCONNECT_SERVICE   = "qobuzconnect2mpd"
+UPMPDCLI_SERVICE   = "upmpdcli"
+SWITCHABLE_SERVICES = (QCONNECT_SERVICE, UPMPDCLI_SERVICE)
 
 # [monitor] section defaults
 TOPCPU_THRESHOLD = 4.0   # minimum %CPU to include in the top-processes list
@@ -897,19 +904,110 @@ def qconnect_status():
         return jsonify({"ok": False, "line1": "", "line2": "", "error": str(e)})
 
 
+def _service_running(name: str) -> bool:
+    """True if the rc service `name` is currently running (FreeBSD onestatus
+    works whether or not the service is enabled in rc.conf)."""
+    try:
+        r = subprocess.run(
+            ["service", name, "onestatus"],
+            capture_output=True, text=True, timeout=10,
+        )
+        return r.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _service_action(name: str, action: str):
+    """Run `sudo service <name> <action>` (action: onestart / onestop)."""
+    return subprocess.run(
+        ["sudo", "service", name, action],
+        capture_output=True, text=True, timeout=30,
+    )
+
+
+def _resolve_mpd_port() -> str | None:
+    """Best-effort MPD port from the common default config locations (Linux and
+    FreeBSD).  Returns None to let mpc fall back to its own default."""
+    for p in ("/usr/local/etc/musicpd.conf",
+              "/usr/local/etc/mpd.conf",
+              "/etc/mpd.conf",
+              os.path.expanduser("~/.config/mpd/mpd.conf"),
+              os.path.expanduser("~/.mpdconf")):
+        if os.path.isfile(p):
+            return _mpd_port_from_conf(p)
+    return None
+
+
+def _mpc_quiesce():
+    """Stop playback and clear the queue so the incoming renderer starts from a
+    clean MPD state.  Best-effort: failures are ignored (MPD may be down)."""
+    cmd = _mpc_client()
+    if not cmd:
+        return
+    port = _resolve_mpd_port()
+    base = cmd + (["-p", str(port)] if port else [])
+    for action in ("stop", "clear"):
+        try:
+            subprocess.run(base + [action],
+                           capture_output=True, text=True, timeout=5, env=_env())
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+
+@app.route("/qconnect/services")
+def qconnect_services():
+    """Running state of the two mutually-exclusive renderers — used to keep the
+    web UI toggle in sync with reality."""
+    return jsonify({
+        "ok":               True,
+        "qobuzconnect2mpd": _service_running(QCONNECT_SERVICE),
+        "upmpdcli":         _service_running(UPMPDCLI_SERVICE),
+    })
+
+
+@app.route("/qconnect/switch", methods=["POST"])
+def qconnect_switch():
+    """Switch the active renderer: stop the other service, then start the
+    target.  Body: {"target": "qobuzconnect2mpd"|"upmpdcli"}."""
+    data   = request.get_json(silent=True) or {}
+    target = data.get("target")
+    if target not in SWITCHABLE_SERVICES:
+        return jsonify({"ok": False, "error": "invalid target"}), 400
+    other = UPMPDCLI_SERVICE if target == QCONNECT_SERVICE else QCONNECT_SERVICE
+    try:
+        # Stop the active one before starting the next.
+        if _service_running(other):
+            r = _service_action(other, "onestop")
+            if r.returncode != 0:
+                return jsonify({"ok": False,
+                                "error": f"stopping {other}: {(r.stderr or r.stdout).strip()}"})
+        # Leave MPD in a clean state for the incoming renderer.
+        _mpc_quiesce()
+        if not _service_running(target):
+            r = _service_action(target, "onestart")
+            if r.returncode != 0:
+                return jsonify({"ok": False,
+                                "error": f"starting {target}: {(r.stderr or r.stdout).strip()}"})
+        return jsonify({"ok": True, "active": target})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "timeout"})
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/qconnect/restart", methods=["POST"])
 def qconnect_restart():
     try:
-        r = subprocess.run(
-            ["systemctl", "--user", "restart", "qobuzconnect2mpd"],
-            capture_output=True, text=True, timeout=10,
-        )
+        r = _service_action(QCONNECT_SERVICE, "onestop")
+        if r.returncode != 0:
+            return jsonify({"ok": False, "error": (r.stderr or r.stdout).strip()})
+        r = _service_action(QCONNECT_SERVICE, "onestart")
         if r.returncode != 0:
             return jsonify({"ok": False, "error": (r.stderr or r.stdout).strip()})
         return jsonify({"ok": True})
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "timeout"})
-    except Exception as e:
+    except OSError as e:
         return jsonify({"ok": False, "error": str(e)})
 
 
