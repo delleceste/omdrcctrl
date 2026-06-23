@@ -1342,6 +1342,120 @@ def brutefir_cpu():
         return jsonify({"ok": False, "error": str(e)})
 
 
+# ── Glitch-detection debug subsystem ──────────────────────────────────────────
+# The repo dir holds drc.sh, drc-status.sh and the glitch-* scripts.  Derive it
+# from the configured drc_status command (same trick as /drc/status), falling
+# back to two levels above this file (omdrc-ctrl is a submodule of the repo).
+def _repo_dir() -> str:
+    cmd = CMD_MAP.get("drc_status")
+    if cmd and cmd.get("cmd"):
+        return os.path.dirname(cmd["cmd"].strip())
+    return os.path.abspath(os.path.join(_HERE, os.pardir, os.pardir))
+
+
+def _glitch_script() -> str:
+    return os.path.join(_repo_dir(), "glitch-debug.sh")
+
+
+_GLITCH_PIDFILE = "/tmp/glitch-monitor.pid"
+
+
+def _monitor_running() -> bool:
+    try:
+        with open(_GLITCH_PIDFILE) as f:
+            pid = int(f.read().strip())
+        os.kill(pid, 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+@app.route("/debug/glitch")
+def debug_glitch_status():
+    repo = _repo_dir()
+    state_file = os.path.join(repo, ".glitch-debug.enabled")
+    log_file = os.path.join(repo, "glitch.log")
+    enabled = os.path.isfile(state_file)
+    events, tail = 0, ""
+    if os.path.isfile(log_file):
+        try:
+            with open(log_file, encoding="utf-8", errors="replace") as f:
+                lines = [ln.rstrip("\n") for ln in f if "stage=" in ln]
+            # the monitor's own start/stop are bookkeeping, not glitches
+            glitches = [ln for ln in lines if "stage=monitor" not in ln]
+            events = len(glitches)
+            tail = "\n".join(lines[-60:])
+        except OSError:
+            pass
+    return jsonify({
+        "ok": True,
+        "enabled": enabled,
+        "monitor_running": _monitor_running(),
+        "events": events,
+        "tail": tail,
+        "log": log_file,
+    })
+
+
+@app.route("/debug/glitch", methods=["POST"])
+def debug_glitch_toggle():
+    data = request.get_json(silent=True) or {}
+    action = "on" if data.get("enabled") else "off"
+    try:
+        r = subprocess.run([_glitch_script(), action],
+                           capture_output=True, text=True, timeout=15, env=_env())
+        ok = r.returncode == 0
+        return jsonify({"ok": ok,
+                        "enabled": action == "on" and ok,
+                        "output": (r.stdout + r.stderr).strip(),
+                        "error": "" if ok else (r.stderr or r.stdout).strip()})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "timeout"})
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/debug/glitch/analyze")
+def debug_glitch_analyze():
+    try:
+        r = subprocess.run([_glitch_script(), "analyze"],
+                           capture_output=True, text=True, timeout=30, env=_env())
+        return jsonify({"ok": r.returncode == 0,
+                        "output": (r.stdout + r.stderr).strip()})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "output": "timeout"})
+    except OSError as e:
+        return jsonify({"ok": False, "output": str(e)})
+
+
+@app.route("/debug/glitch/clear", methods=["POST"])
+def debug_glitch_clear():
+    try:
+        r = subprocess.run([_glitch_script(), "clear"],
+                           capture_output=True, text=True, timeout=10, env=_env())
+        return jsonify({"ok": r.returncode == 0})
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/debug/glitch/usbtap", methods=["POST"])
+def debug_glitch_usbtap():
+    data = request.get_json(silent=True) or {}
+    try:
+        seconds = max(5, min(600, int(data.get("seconds", 180))))
+    except (TypeError, ValueError):
+        seconds = 180
+    # The capture runs for `seconds`; launch it detached and return immediately.
+    try:
+        subprocess.Popen([_glitch_script(), "usbtap", str(seconds)],
+                         env=_env(), stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return jsonify({"ok": True, "seconds": seconds})
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/status")
 def status():
     units = {}

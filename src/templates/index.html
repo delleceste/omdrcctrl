@@ -554,6 +554,38 @@
     </div>
 </div>
 
+<!-- Debug · glitch detection (bottom) -->
+<div class="card">
+    <div class="card-title qc-card-title">
+        <span>Debug · Glitch detection <span class="refresh-note" id="dbg-refresh-label">refresh: 5s</span></span>
+        <div class="title-actions">
+            <button class="btn-refresh" id="dbg-refresh-btn" title="Refresh">↻</button>
+            <select id="dbg-usbtap-secs" class="btn-log" title="USB tap duration">
+                <option value="60">60s</option>
+                <option value="180" selected>3 min</option>
+                <option value="300">5 min</option>
+                <option value="600">10 min</option>
+            </select>
+            <button class="btn-log" id="btn-dbg-usbtap"  onclick="debugUsbTap()">USB tap</button>
+            <button class="btn-log" id="btn-dbg-analyze" onclick="debugAnalyze()">Analyze</button>
+            <button class="btn-log" id="btn-dbg-clear"   onclick="debugClear()">Clear</button>
+            <button class="btn-log" id="btn-dbg-log"     onclick="toggleDebugLog()">Log</button>
+        </div>
+    </div>
+    <!-- Global on/off switch for the whole glitch-detection subsystem -->
+    <div class="qc-switch" id="dbg-switch">
+        <button class="qc-seg" data-on="0" onclick="toggleDebug(false)">Off</button>
+        <button class="qc-seg" data-on="1" onclick="toggleDebug(true)">On</button>
+    </div>
+    <div style="padding:12px 0">
+        <div id="dbg-line1" class="idle">—</div>
+        <div id="dbg-line2"></div>
+    </div>
+    <div id="dbg-log-panel" style="display:none">
+        <pre id="dbg-log-content" class="qc-log"></pre>
+    </div>
+</div>
+
 <footer><a href="/readme">README</a></footer>
 
 <div id="toast"></div>
@@ -1154,6 +1186,108 @@ async function fetchRam() {
         el.innerHTML = '<span style="color:var(--red)">network error</span>';
     }
 }
+// ── Debug · glitch detection ───────────────────────────────────────────────
+// One switch drives the whole subsystem (glitch-debug.sh on|off): it drops a
+// state file and starts/stops the glitch-monitor daemon.  The Log panel shows
+// either the raw glitch.log tail or the analyzer's periodicity verdict.
+let dbgLogVisible = false;
+let dbgLogMode = 'tail';   // 'tail' | 'analyze'
+
+function paintDebug(d) {
+    document.querySelectorAll('#dbg-switch .qc-seg').forEach(seg => {
+        seg.classList.toggle('active', (seg.dataset.on === '1') === !!d.enabled);
+    });
+    const l1 = document.getElementById('dbg-line1');
+    l1.textContent = d.enabled ? 'monitoring ON' : 'monitoring off';
+    l1.classList.toggle('idle', !d.enabled);
+    document.getElementById('dbg-line2').textContent =
+        `${d.events} event${d.events === 1 ? '' : 's'} · monitor ${d.monitor_running ? 'running' : 'stopped'}`;
+    if (dbgLogVisible && dbgLogMode === 'tail')
+        document.getElementById('dbg-log-content').textContent = d.tail || '(no events yet)';
+}
+
+async function fetchDebugStatus() {
+    try {
+        const d = await (await fetch('/debug/glitch')).json();
+        if (d.ok) paintDebug(d);
+    } catch { /* transient */ }
+}
+
+async function toggleDebug(on) {
+    const sw = document.getElementById('dbg-switch');
+    sw.classList.add('busy');
+    try {
+        const d = await (await fetch('/debug/glitch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: on }),
+        })).json();
+        if (d.ok) toast(`glitch detection ${on ? 'ON' : 'OFF'}`, 'ok');
+        else      toast(d.error || 'toggle failed', 'error');
+    } catch {
+        toast('network error', 'error');
+    } finally {
+        sw.classList.remove('busy');
+        fetchDebugStatus();
+    }
+}
+
+function toggleDebugLog() {
+    dbgLogVisible = !dbgLogVisible;
+    document.getElementById('dbg-log-panel').style.display = dbgLogVisible ? 'block' : 'none';
+    document.getElementById('btn-dbg-log').classList.toggle('active', dbgLogVisible);
+    if (dbgLogVisible) { dbgLogMode = 'tail'; fetchDebugStatus(); }
+}
+
+async function debugAnalyze() {
+    dbgLogVisible = true;
+    dbgLogMode = 'analyze';
+    document.getElementById('dbg-log-panel').style.display = 'block';
+    document.getElementById('btn-dbg-log').classList.add('active');
+    const el = document.getElementById('dbg-log-content');
+    el.textContent = 'analyzing…';
+    try {
+        const d = await (await fetch('/debug/glitch/analyze')).json();
+        el.textContent = d.output || '(no output)';
+    } catch {
+        el.textContent = 'network error';
+    }
+}
+
+async function debugClear() {
+    try {
+        await fetch('/debug/glitch/clear', { method: 'POST' });
+        toast('glitch.log cleared', 'ok');
+    } catch {
+        toast('network error', 'error');
+    }
+    fetchDebugStatus();
+}
+
+async function debugUsbTap() {
+    const btn = document.getElementById('btn-dbg-usbtap');
+    const secs = parseInt(document.getElementById('dbg-usbtap-secs').value, 10) || 180;
+    btn.disabled = true;
+    try {
+        const d = await (await fetch('/debug/glitch/usbtap', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ seconds: secs }),
+        })).json();
+        if (d.ok) {
+            toast(`USB tap running ${d.seconds}s… (decode follows)`, 'ok', 6000);
+            // re-enable + refresh shortly after the capture window closes
+            setTimeout(() => { btn.disabled = false; fetchDebugStatus(); }, (d.seconds + 8) * 1000);
+        } else {
+            toast(d.error || 'USB tap failed', 'error');
+            btn.disabled = false;
+        }
+    } catch {
+        toast('network error', 'error');
+        btn.disabled = false;
+    }
+}
+
 startAutoRefresh('qc', 1000, fetchQcStatus);
 // Keep the renderer toggle in sync with actual service status on a slow cadence.
 syncRenderers();
@@ -1163,6 +1297,7 @@ startAutoRefresh('mpd', MONITOR_INTERVAL_MS, fetchMpdInfo);
 startAutoRefresh('sndstat', SNDSTAT_INTERVAL_MS, fetchSndstat);
 startAutoRefresh('topcpu', TOPCPU_INTERVAL_MS, fetchTopCpu);
 startAutoRefresh('ram', RAM_INTERVAL_MS, fetchRam);
+startAutoRefresh('dbg', 5000, fetchDebugStatus);
 </script>
 </body>
 </html>
