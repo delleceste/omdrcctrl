@@ -560,13 +560,6 @@
         <span>Debug · Glitch detection <span class="refresh-note" id="dbg-refresh-label">refresh: 5s</span></span>
         <div class="title-actions">
             <button class="btn-refresh" id="dbg-refresh-btn" title="Refresh">↻</button>
-            <select id="dbg-usbtap-secs" class="btn-log" title="USB tap duration">
-                <option value="60">60s</option>
-                <option value="180" selected>3 min</option>
-                <option value="300">5 min</option>
-                <option value="600">10 min</option>
-            </select>
-            <button class="btn-log" id="btn-dbg-usbtap"  onclick="debugUsbTap()">USB tap</button>
             <button class="btn-log" id="btn-dbg-analyze" onclick="debugAnalyze()">Analyze</button>
             <button class="btn-log" id="btn-dbg-clear"   onclick="debugClear()">Clear</button>
             <button class="btn-log" id="btn-dbg-log"     onclick="toggleDebugLog()">Log</button>
@@ -1262,30 +1255,6 @@ async function debugClear() {
         toast('network error', 'error');
     }
     fetchDebugStatus();
-}
-
-async function debugUsbTap() {
-    const btn = document.getElementById('btn-dbg-usbtap');
-    const secs = parseInt(document.getElementById('dbg-usbtap-secs').value, 10) || 180;
-    btn.disabled = true;
-    try {
-        const d = await (await fetch('/debug/glitch/usbtap', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ seconds: secs }),
-        })).json();
-        if (d.ok) {
-            toast(`USB tap running ${d.seconds}s… (decode follows)`, 'ok', 6000);
-            // re-enable + refresh shortly after the capture window closes
-            setTimeout(() => { btn.disabled = false; fetchDebugStatus(); }, (d.seconds + 8) * 1000);
-        } else {
-            toast(d.error || 'USB tap failed', 'error');
-            btn.disabled = false;
-        }
-    } catch {
-        toast('network error', 'error');
-        btn.disabled = false;
-    }
 }
 
 startAutoRefresh('qc', 1000, fetchQcStatus);

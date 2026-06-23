@@ -1438,22 +1438,8 @@ def debug_glitch_clear():
         return jsonify({"ok": False, "error": str(e)})
 
 
-@app.route("/debug/glitch/usbtap", methods=["POST"])
-def debug_glitch_usbtap():
-    data = request.get_json(silent=True) or {}
-    try:
-        seconds = max(5, min(600, int(data.get("seconds", 180))))
-    except (TypeError, ValueError):
-        seconds = 180
-    # The capture runs for `seconds`; launch it detached and return immediately.
-    try:
-        subprocess.Popen([_glitch_script(), "usbtap", str(seconds)],
-                         env=_env(), stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True)
-        return jsonify({"ok": True, "seconds": seconds})
-    except OSError as e:
-        return jsonify({"ok": False, "error": str(e)})
+# NOTE: the USB tap is intentionally CLI-only (`glitch-debug.sh usbtap [sec]`,
+# default 180s) — it is heavy and needs root, so it is not exposed in the web UI.
 
 
 @app.route("/status")
