@@ -1270,6 +1270,33 @@ def drc_geometry():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route("/drc/config")
+def drc_config():
+    """Lightweight summary of the .conf the *running* BruteFIR loaded:
+    geometry, sampling rate and coeff attenuation.
+
+    Unlike /drc/filter-response this does no FFT (no numpy), so it is cheap
+    enough to drive the DRC card label.  When BruteFIR is not running there
+    is no active .conf, so `running` is False and the caller falls back to
+    the statically configured geometry.
+    """
+    conf_path = _active_brutefir_conf()
+    if not conf_path:
+        return jsonify({"ok": True, "running": False})
+    try:
+        parsed = _parse_brutefir_conf(conf_path)
+        return jsonify({
+            "ok": True,
+            "running": True,
+            "geometry": os.path.basename(os.path.dirname(conf_path)),
+            "rate": parsed["rate"],
+            "conf": os.path.basename(conf_path),
+            "attenuation": [c["attenuation"] for c in parsed["coeffs"]],
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/filter-response")
 def filter_response_page():
     return render_template("filter_response.html")

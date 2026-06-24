@@ -591,12 +591,34 @@ const BRUTEFIR_INTERVAL_MS = {{ brutefir_interval }} * 1000;
 const RAM_INTERVAL_MS = 10000;
 const TOPCPU_THRESHOLD    = {{ topcpu_threshold }};
 
-// ── DRC geometry label ────────────────────────────────────────────────────
+// ── DRC config label (geometry + coeff attenuation) ───────────────────────
+// Format a brutefir attenuation list as a compact "N dB" string. A single
+// value when both channels match, otherwise "L/R dB".
+function fmtAttenuation(att) {
+    if (!Array.isArray(att) || !att.length) return '';
+    const uniq = [...new Set(att.map(Number))];
+    return (uniq.length === 1 ? uniq[0] : att.join('/')) + ' dB';
+}
 (async () => {
+    const el = document.getElementById('drc-geometry-label');
+    if (!el) return;
+    // Prefer the .conf the running BruteFIR actually loaded — it carries the
+    // attenuation alongside the geometry and rate.
     try {
-        const d = await (await fetch('/drc/geometry')).json();
-        const el = document.getElementById('drc-geometry-label');
-        if (el && d.ok && d.geometry) el.textContent = d.geometry;
+        const d = await (await fetch('/drc/config')).json();
+        if (d.ok && d.running) {
+            const parts = [];
+            if (d.geometry) parts.push(d.geometry);
+            const att = fmtAttenuation(d.attenuation);
+            if (att) parts.push('att ' + att);
+            el.textContent = parts.join(' · ');
+            return;
+        }
+    } catch {}
+    // BruteFIR not running: fall back to the configured geometry.
+    try {
+        const g = await (await fetch('/drc/geometry')).json();
+        if (g.ok && g.geometry) el.textContent = g.geometry;
     } catch {}
 })();
 
